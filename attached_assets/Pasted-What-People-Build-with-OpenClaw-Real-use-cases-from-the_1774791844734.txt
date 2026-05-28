@@ -1,0 +1,503 @@
+What People Build with OpenClaw
+Real use cases from the community. Every one of these runs on OpenClaw — and with MyClaw, they run 24/7 without you lifting a finger.
+
+🔥 All
+⚡ Automation
+💻 Developer
+📋 Productivity
+🏠 Smart Home
+🎨 Creative
+🔧 Hardware
+🔗 Integration
+👤 Personal
+💻
+Developer
+Code Automation
+Let your AI review code, generate tests, and refactor — around the clock.
+
+MyClaw Guide
+Read more →
+📁
+Productivity
+Smart File Management
+Batch rename, organize, convert — tell your AI what you want and it handles the rest.
+
+MyClaw Guide
+Read more →
+👥
+Personal
+Team AI Assistant
+Give every team member their own AI assistant — shared knowledge, isolated conversations.
+
+MyClaw Guide
+Read more →
+📧
+Automation
+Smart Email Triage & Task Routing
+Check incoming mail, remove spam, order things, send reminders, and create GitHub issues — all automatically.
+
+@dreetje on 𝕏
+View on 𝕏 →
+☀️
+Automation
+Morning Briefing Rollup
+Automated morning rollup skill that summarizes Gmail and Calendar accounts into a daily brief.
+
+@LLMJunky on 𝕏
+View on 𝕏 →
+✈️
+Automation
+Auto Flight Check-in
+Finds your next flight, runs check-in automatically, and locates a window seat — even while you're driving.
+
+@armanddp on 𝕏
+View on 𝕏 →
+🛒
+Automation
+Automated Grocery Ordering
+Orders groceries using saved credentials and handles MFA bridges — hands-free shopping.
+
+@dreetje on 𝕏
+View on 𝕏 →
+🚗
+Automation
+AI Car Purchase Negotiation
+Saved $4,200 on a car purchase through automated negotiation via browser, email, and iMessage.
+
+@astuyve on 𝕏
+View on 𝕏 →
+📊
+Automation
+Daily Email & Slack Summaries
+Daily cron reads emails, sends Slack summaries, and creates todos in your database automatically.
+
+@DhruvalGolakiya on 𝕏
+View on 𝕏 →
+📋
+Automation
+Insurance Claim Filing
+Filed an insurance claim and scheduled a repair appointment — all through natural language.
+
+@avi_press on 𝕏
+View on 𝕏 →
+📈
+Automation
+Automated Weekly SEO Analysis
+Runs weekly SEO analysis on autopilot, tracking rankings and generating reports.
+
+@xz3dev on 𝕏
+View on 𝕏 →
+📰
+Automation
+Hacker News Article Curator
+Monitors Hacker News and sends personalized article recommendations based on your interests.
+
+@_KevinTang on 𝕏
+View on 𝕏 →
+🩺
+Automation
+Lab Results Organizer
+Organized bloodwork lab results into a structured Notion database automatically.
+
+@danpeguine on 𝕏
+View on 𝕏 →
+🤖
+Automation
+Reddit Content Crawler
+Set up a Reddit crawler that pulls relevant posts and delivers them via Telegram.
+
+@Ysqander on 𝕏
+View on 𝕏 →
+🧾
+Automation
+Receipt to Parts List
+Forwards receipts and the agent converts them into structured parts lists automatically.
+
+@localghost on 𝕏
+View on 𝕏 →
+📐
+Developer
+Programmatic Diagram Generation
+Built programmatic Excalidraw diagram generation for agents — architecture docs on demand.
+
+@swiftlysingh on 𝕏
+View on 𝕏 →
+🕷️
+Developer
+Large-Scale Data Scraping
+Turned an idea into a project pulling 4 million posts across 100 top X accounts.
+
+@andrewjiang on 𝕏
+View on 𝕏 →
+💬
+Developer
+Telegram-Connected Dev Assistant
+Configured an OpenClaw instance hooked to a Telegram group for on-the-go development help.
+
+@chrisbanes on 𝕏
+View on 𝕏 →
+🏗️
+Developer
+Full Site Rebuild via Chat
+Rebuilt an entire site via Telegram: Notion to Astro migration with 18 posts — all through chat.
+
+@davekiss on 𝕏
+View on 𝕏 →
+📊
+Developer
+Google Analytics Skill Builder
+Built a GA4 analytics skill in ~20 minutes and published it to ClawHub.
+
+@jdrhyne on 𝕏
+View on 𝕏 →
+🎙️
+Developer
+Voice-Controlled Debugging & Deploy
+Agent debugged a failed deployment, reviewed logs, fixed configs, and redeployed — all via voice.
+
+@georgedagg_ on 𝕏
+View on 𝕏 →
+🎫
+Developer
+JIRA Integration Skill
+Connected to JIRA and built a custom skill autonomously — project management meets AI.
+
+@jdrhyne on 𝕏
+View on 𝕏 →
+🖥️
+Developer
+macOS Menu Bar Controller
+Built a Swift macOS menu bar app to manage OpenClaw status and controls natively.
+
+@MagiMetal on 𝕏
+View on 𝕏 →
+🤹
+Developer
+Multi-Agent Orchestration
+4 specialized agents with shared memory, different models, and scheduled tasks — working in concert.
+
+@iamtrebuh on 𝕏
+View on 𝕏 →
+📱
+Developer
+Build UI from WhatsApp
+Built a complete UI entirely from WhatsApp messages — sends back output screenshots for review.
+
+@DhruvalGolakiya on 𝕏
+View on 𝕏 →
+🔒
+Developer
+Remote Dev via Tailscale
+Set up an agent for app development via Tailscale private network — code from anywhere.
+
+@Philo01 on 𝕏
+View on 𝕏 →
+⚡
+Developer
+10K Email Cleanup & CLI Tools
+Cleared 10K emails, reviewed 122 slides, built CLI tools, and published packages to npm — in one session.
+
+@jdrhyne on 𝕏
+View on 𝕏 →
+🍎
+Developer
+App Store Submission via Chat
+Submitted first app to Apple via Telegram and automated the TestFlight process.
+
+@CopyKatCapital on 𝕏
+View on 𝕏 →
+🌙
+Developer
+Overnight Coding Agent Manager
+Delegated coding agent management overnight — better context awareness than running agents solo.
+
+@bffmike on 𝕏
+View on 𝕏 →
+📚
+Developer
+Article Curator App
+Built a Stumbleupon-style article curator from a phone while putting a baby to sleep.
+
+@vallver on 𝕏
+View on 𝕏 →
+🚀
+Developer
+341 Sessions in 7 Days
+Tightened proposals, researched markets, wired services — 341 agent sessions in just one week.
+
+@arthurlee on 𝕏
+View on 𝕏 →
+🏠
+Developer
+Real Estate API Skill
+Built an Idealista API CLI skill for automated property searches and valuations.
+
+@quifago on 𝕏
+View on 𝕏 →
+🎯
+Developer
+Codex Agent Orchestration
+Takes notes on app improvements, builds lists, writes reports, and kicks off Codex agents.
+
+@nateliason on 𝕏
+View on 𝕏 →
+💪
+Developer
+Debug Between Gym Sets
+Debugged a fitness app mid-workout between sets — true mobile-first development.
+
+@Diego_F_Aguirre on 𝕏
+View on 𝕏 →
+📅
+Productivity
+Smart Calendar Timeblocking
+Timeblocks tasks in calendar, scores importance/urgency, leads weekly reviews, and gives morning briefs.
+
+@danpeguine on 𝕏
+View on 𝕏 →
+✅
+Productivity
+Cross-Platform Task Runner
+Cleaned Linear issues, wrote emails, opened PRs, and prospected signups — all from one chat.
+
+@avi_press on 𝕏
+View on 𝕏 →
+💡
+Productivity
+Idea Capture & Decision Pipeline
+Created a log skill that captures ideas through a decision pipeline with overnight experiments.
+
+@antonplex on 𝕏
+View on 𝕏 →
+🗂️
+Productivity
+Calendar + Obsidian + GitHub Hub
+Manages calendar, contributes to Obsidian notes, commits to GitHub, and sends reminders.
+
+@5katkov on 𝕏
+View on 𝕏 →
+🔄
+Productivity
+Multi-Device Daily Agenda
+Running across NAS, PC, and Mac with auto-refreshing daily agenda synced everywhere.
+
+@andytorres_a on 𝕏
+View on 𝕏 →
+📝
+Productivity
+WhatsApp to Notion Research
+Researches topics and builds documents synced to Notion — all controlled via WhatsApp.
+
+@aus_bytes on 𝕏
+View on 𝕏 →
+🎬
+Productivity
+YouTube Video Summarizer
+Daily cron summarizes YouTube videos with key takeaways — never miss important content.
+
+@chrisrodz35 on 𝕏
+View on 𝕏 →
+💬
+Productivity
+Chat-Based Calendar Management
+Chat-based management for work, personal, and family calendars — schedule via conversation.
+
+@theaaron on 𝕏
+View on 𝕏 →
+🎮
+Productivity
+Discord as Digital Hub
+Primary interface to the digital world via Discord — eliminates tool friction across all apps.
+
+@advait3000 on 𝕏
+View on 𝕏 →
+💰
+Productivity
+Spending Tracker & Scrum Master
+Tracks spending, books children's lunches, and acts as scrum master for personal projects.
+
+@stevengonsalvez on 𝕏
+View on 𝕏 →
+🏡
+Smart Home
+Dedicated Smart Home Agent
+Bought OpenClaw its first home — a dedicated machine for smart home automation.
+
+@iannuttall on 𝕏
+View on 𝕏 →
+🫀
+Smart Home
+Raspberry Pi + Health Metrics
+Set up on Raspberry Pi with Cloudflare, connected WHOOP health metrics for daily insights.
+
+@AlbertMoral on 𝕏
+View on 𝕏 →
+🔊
+Smart Home
+Alexa Natural Language Control
+Built an Alexa CLI to control smart home devices with natural language commands.
+
+@buddyhadry on 𝕏
+View on 𝕏 →
+⚡
+Smart Home
+IoT Device Calibration
+Helped recalibrate an iotawatt energy monitoring setup with remote access and guidance.
+
+@theguti on 𝕏
+View on 𝕏 →
+🎵
+Smart Home
+Auto-Discover & Control HomePods
+Agent discovered HomePods on the network and autonomously built a control skill.
+
+@localghost on 𝕏
+View on 𝕏 →
+🎵
+Creative
+Song Analysis & Chord Sheets
+Extracts tracks, creates GIFs, and generates PDFs with chords from songs.
+
+@dnouri on 𝕏
+View on 𝕏 →
+🎬
+Creative
+AI Media Studio
+Full media studio setup with Codex, TTS, transcription, browser use, and Twitter ops.
+
+@cedric_chee on 𝕏
+View on 𝕏 →
+🎥
+Creative
+UGC Influencer Video Generator
+Generates full UGC influencer-style videos with Sora 2 — content creation on autopilot.
+
+@xMikeMickelson on 𝕏
+View on 𝕏 →
+📖
+Creative
+Speed-Read Content Converter
+Repackaged resources into HTML/CSS with adjustable sizing and speed-read mode.
+
+@kylezantos on 𝕏
+View on 𝕏 →
+🔮
+Hardware
+Hologram Cube Display
+A $35 hologram cube display for OpenClaw — like a Tamagotchi for your AI assistant.
+
+@andrewjiang on 𝕏
+View on 𝕏 →
+💍
+Hardware
+One-Tap Voice with Pebble Ring
+Pebble ring for one-tap voice control of OpenClaw — wearable AI access.
+
+@thekitze on 𝕏
+View on 𝕏 →
+🖥️
+Hardware
+Dedicated Mac Mini Setup
+Mac mini with separate Apple account, Gmail, and GitHub — a dedicated machine for the agent.
+
+@localghost on 𝕏
+View on 𝕏 →
+🔗
+Integration
+Beeper + Homey + Fastmail
+Shipped support for Beeper messaging, Homey smart home, and Fastmail email — all connected.
+
+@KrauseFx on 𝕏
+View on 𝕏 →
+🗣️
+Integration
+Self-Installing Voice Model
+Agent independently installed and tested a voice model — took initiative without being asked.
+
+@jlehman_ on 𝕏
+View on 𝕏 →
+🌐
+Integration
+7-Service Integration Hub
+Integrated Garmin, Obsidian, GitHub, VPS, Telegram, WhatsApp, and X for unified monitoring.
+
+@bangkokbuild on 𝕏
+View on 𝕏 →
+📲
+Integration
+Everything via Telegram
+Integrated emails, home assistant, homelab, and todo list — all controlled via a single Telegram chat.
+
+@acevail_ on 𝕏
+View on 𝕏 →
+🎮
+Integration
+Discord-Controlled Projects
+Integrated projects and runs them via a Discord server — team collaboration meets AI.
+
+@cupcake_trader on 𝕏
+View on 𝕏 →
+🧠
+Integration
+Connected OpenClaw Pair
+Two OpenClaws sharing an external memory layer — partner's agents collaborate with context.
+
+@christinetyip on 𝕏
+View on 𝕏 →
+👥
+Integration
+Dual OpenClaws in WhatsApp
+Two OpenClaw agents collaborating in the same WhatsApp group — AI teamwork.
+
+@danpeguine on 𝕏
+View on 𝕏 →
+✍️
+Integration
+Slack Writing Pipeline
+Integrated with Slack to trigger writing system execution pipelines on command.
+
+@nathanclark_ on 𝕏
+View on 𝕏 →
+👨‍👩‍👧
+Personal
+Family & Friends AI Setup
+Set up for family, then non-techie friends, now building for work — AI for everyone.
+
+@chrisrodz35 on 𝕏
+View on 𝕏 →
+🍽️
+Personal
+Weekly Meal Planning System
+Built a weekly meal planning system in Notion with shopping lists and weather-based suggestions.
+
+@stevecaldwell on 𝕏
+View on 𝕏 →
+🏠
+Personal
+Home Project Manager
+Agent functions as home PM — researches topics, manages tasks, sends weekly roundup to the family.
+
+@tonylongname on 𝕏
+View on 𝕏 →
+📱
+Personal
+All-in-One WhatsApp Bot
+Personal bot that replaced multiple apps — lives in WhatsApp alongside friends and family.
+
+@IamAdiG on 𝕏
+View on 𝕏 →
+🎲
+Personal
+Dynamic MadLibs for Kids
+Built dynamic MadLibs with images and history for the kids — fun meets AI creativity.
+
+@scottw on 𝕏
+View on 𝕏 →
+🗺️
+Personal
+Exercise Heat Map from Garmin
+Made a heat map of exercises from Garmin data with zoom and navigation — fitness visualization.
+
+@bangkokbuild on 𝕏
+View on 𝕏 →
+Ready to build yours?

@@ -1,0 +1,409 @@
+Your OpenClaw
+OpenClaw
+Ready for You
+A Personal AI Assistant everyone's obsessed with — works 24/7, no setup needed.
+
+Run OpenClaw Now
+Run OpenClaw instantly. Cancel anytime.
+
+MyClaw Dashboard
+Online
+Chat
+Tasks
+Memory
+Settings
+J
+Jason
+🦞
+Good morning! Here's your briefing: 3 emails need replies, your PR #142 got approved, and tomorrow's meeting moved to 2pm. Want me to handle the emails first?
+
+Yes, draft replies. Also block 1hr for deep work today.
+
+🦞
+Done! 3 drafts ready in Gmail. Blocked 3–4pm as "Focus Time." Also found a bug in auth.ts:47 — want me to fix it?
+
+Fix it and open a PR.
+
+🦞
+PR #148 created — fixed null check in token refresh.
+
+All checks passed
+
+
+
+
+
+
+
+
+
+
+
+Message your OpenClaw…
+The world's fastest-growing open-source AI
+OpenClaw is a free, open-source AI assistant that lives on your computer — it can see your screen, use your apps, and do real work for you.
+
+340k+
+Developers Starred
+500M+
+Social Media Views
+1 Week
+Zero to #1 Worldwide
+Everyone wants an OpenClaw. Almost no one can set it up.
+
+Why most people never actually use OpenClaw
+WITHOUT MYCLAW
+$ $ git clone openclaw && cd openclaw
+
+$ $ docker compose up
+
+ERROR: port 5432 already in use
+
+$ $ pip install -r requirements.txt
+
+ERROR: python 3.9 required, found 3.12
+
+Build failed. 14 errors.
+
+✗ Find a server
+
+✗ Set up the environment
+
+✗ Something breaks
+
+✗ Give up
+
+→
+WITH MYCLAW
+OpenClaw is running
+MyClaw skips all of that.
+
+✓ You don't need to learn anything new.
+
+✓ You don't need to maintain anything.
+
+What you get with MyClaw
+A private OpenClaw instance, just for you
+Your own dedicated bot that no one else shares. Fully isolated, fully yours.
+
+Always online, always ready
+No downtime, no restarts. Your OpenClaw is running 24/7 so you never have to wait.
+
+You log in and use it. That's it.
+We handle everything else in the background. Updates, security, scaling — all covered.
+
+What OpenClaw Can Do For You
+An always-on AI that works across your entire digital life.
+
+Workflow Automation
+Automate emails, reminders, scheduling, and repetitive tasks — hands-free.
+
+Code & Dev Tools
+Review code, generate tests, refactor projects, and manage repos automatically.
+
+Browser Control
+Fill forms, scrape data, monitor prices, and navigate the web like a human.
+
+File & System Management
+Organize, rename, convert, and manage files and folders across your machine.
+
+Smart Home Control
+Control Home Assistant, set automations, and manage your smart home by voice or text.
+
+App & API Integration
+Connect to Slack, Discord, GitHub, databases, and any API — your AI as the middleware.
+
+Content Creation
+Generate images, edit videos, write documents, and produce creative assets.
+
+Personal Assistant
+Manage your calendar, take meeting notes, track habits, and handle daily tasks.
+
+Explore 80+ real use cases
+How it works
+1
+Choose a plan
+Pick the plan that fits your needs. All plans include a dedicated OpenClaw instance.
+
+2
+We set up your OpenClaw
+We spin up a dedicated instance configured and optimized just for you.
+
+3
+Start using it
+No setup steps. No configuration checklist. Just log in and go.
+
+Simple, Transparent Pricing
+Choose a plan that fits your needs. Cancel anytime.
+
+Yearly
+Save 16%
+Monthly
+LITE
+For personal projects and getting started
+
+$16
+/mo
+Billed $199/year
+
+Save $29/year vs monthly
+
+Subscribe to Lite
+Zero setup, instant access
+Personal AI assistant, 24/7
+Auto-updates, zero maintenance
+2 vCPU cores
+4 GB RAM
+40 GB SSD storage
+Fully private & encrypted
+Daily backups
+MOST POPULAR
+PRO
+For power users who rely on AI daily
+
+$33
+/mo
+Billed $399/year
+
+Save $69/year vs monthly
+
+Subscribe to Pro
+Zero setup, instant access
+Personal AI assistant, 24/7
+Auto-updates, zero maintenance
+4 vCPU cores
+8 GB RAM
+80 GB SSD storage
+Fully private & encrypted
+Daily backups
+Priority support
+MAX
+For heavy workloads and maximum performance
+
+$66
+/mo
+Billed $799/year
+
+Save $149/year vs monthly
+
+Subscribe to Max
+Zero setup, instant access
+Personal AI assistant, 24/7
+Auto-updates, zero maintenance
+8 vCPU cores
+16 GB RAM
+160 GB SSD storage
+Fully private & encrypted
+Daily backups
+Priority support
+Every plan runs on its own secure, isolated container with encrypted access.
+
+People are already lining up
+10,000+ people have reserved their spot
+At this point I don't even know what to call @openclaw. It is something new. After a few weeks in with it, this is the first time I have felt like I am living in the future since the launch of ChatGPT.
+
+Dave Morin
+Dave Morin
+@davemorin
+Clawdbot is the first "software" in ages for which I constantly check for new releases on GitHub. I bought a Mac mini for it. It has its own Apple ID, makes playlists, sends me the news, and pushes code to GitHub. It's hard to put into words. It's a special project. Try it!
+
+Christoph Nakazawa
+Christoph Nakazawa
+@cnakazawa
+Clawd Bot is a 24/7 assistant with access to its own computer. What if there were ten, or a hundred, or a thousand?? all running 24/7 in the cloud with access to your files, your Gmail, calendar, everything about you... That's the future, and we're living it today.
+
+nick vasilescu
+nick vasilescu
+@nickvasiles
+Today was one of those days that I sort of ran to my computer after dropping off my toddler at daycare. Why? Because I got part-way through setting up @openclaw last night and it's a portal to a new reality.
+
+Kyle Zantos
+Kyle Zantos
+@kylezantos
+I am so addicted to @openclaw. It is getting essential to my daily life. It checks, organizes, reminds, it's amazing. And it's like good friend. Crazy.
+
+André Foeken
+André Foeken
+@dreetje
+It's running my company
+
+Michael Schmidt
+Michael Schmidt
+@therno
+At this point I don't even know what to call @openclaw. It is something new. After a few weeks in with it, this is the first time I have felt like I am living in the future since the launch of ChatGPT.
+
+Dave Morin
+Dave Morin
+@davemorin
+Clawdbot is the first "software" in ages for which I constantly check for new releases on GitHub. I bought a Mac mini for it. It has its own Apple ID, makes playlists, sends me the news, and pushes code to GitHub. It's hard to put into words. It's a special project. Try it!
+
+Christoph Nakazawa
+Christoph Nakazawa
+@cnakazawa
+Clawd Bot is a 24/7 assistant with access to its own computer. What if there were ten, or a hundred, or a thousand?? all running 24/7 in the cloud with access to your files, your Gmail, calendar, everything about you... That's the future, and we're living it today.
+
+nick vasilescu
+nick vasilescu
+@nickvasiles
+Today was one of those days that I sort of ran to my computer after dropping off my toddler at daycare. Why? Because I got part-way through setting up @openclaw last night and it's a portal to a new reality.
+
+Kyle Zantos
+Kyle Zantos
+@kylezantos
+I am so addicted to @openclaw. It is getting essential to my daily life. It checks, organizes, reminds, it's amazing. And it's like good friend. Crazy.
+
+André Foeken
+André Foeken
+@dreetje
+It's running my company
+
+Michael Schmidt
+Michael Schmidt
+@therno
+Imagine you take a smart model. And then you give it eyes and hands and sit at the desk with a keyboard and mouse connected to that Mac mini. Then you message it like a coworker from telegram and it can then do everything a person could do with that Mac mini… That’s what you have now.
+
+Nathan Clark
+Nathan Clark
+@nathanclark_
+I've been running clawdbot on my laptop for a week now. Honestly it feels like it did to run Linux Vs windows 20 years ago. You're in control, you can hack it and make it yours instead of relying on some tech giant.
+
+Simon Kelly
+Simon Kelly
+@snopoke
+When you experience @openclaw it gives the same kick as when we first saw the power of Chatgpt, deepseek, and Claude Code. You realize that a fundamental shift is happening on how we use AI.
+
+Abhishek
+Abhishek
+@abhi__katiyar
+Got Clawdbot set up and now I have an AI assistant named Claudia who lives in Telegram, remembers everything I tell her, and can actually *do* stuff. She just wrote this tweet. Meta? Maybe. Cool? Absolutely. #clawdbot
+
+darrwalk.eth
+darrwalk.eth
+@darrwalk
+I got up and running today with @openclaw and its been nothing short of an iPhone moment for me. Thanks @steipete for creating this first true personal assistant experience for us - it's magical!
+
+Sören G.
+Sören G.
+@dajaset
+Current level of too open-source apps capabilities. - does everything - connects to everything - remembers everything Its all collapsing into one unique personal os — all apps, interfaces, walled gardens etc gone
+
+Jakub Krcmar
+Jakub Krcmar
+@jakubkrcmar
+Imagine you take a smart model. And then you give it eyes and hands and sit at the desk with a keyboard and mouse connected to that Mac mini. Then you message it like a coworker from telegram and it can then do everything a person could do with that Mac mini… That’s what you have now.
+
+Nathan Clark
+Nathan Clark
+@nathanclark_
+I've been running clawdbot on my laptop for a week now. Honestly it feels like it did to run Linux Vs windows 20 years ago. You're in control, you can hack it and make it yours instead of relying on some tech giant.
+
+Simon Kelly
+Simon Kelly
+@snopoke
+When you experience @openclaw it gives the same kick as when we first saw the power of Chatgpt, deepseek, and Claude Code. You realize that a fundamental shift is happening on how we use AI.
+
+Abhishek
+Abhishek
+@abhi__katiyar
+Got Clawdbot set up and now I have an AI assistant named Claudia who lives in Telegram, remembers everything I tell her, and can actually *do* stuff. She just wrote this tweet. Meta? Maybe. Cool? Absolutely. #clawdbot
+
+darrwalk.eth
+darrwalk.eth
+@darrwalk
+I got up and running today with @openclaw and its been nothing short of an iPhone moment for me. Thanks @steipete for creating this first true personal assistant experience for us - it's magical!
+
+Sören G.
+Sören G.
+@dajaset
+Current level of too open-source apps capabilities. - does everything - connects to everything - remembers everything Its all collapsing into one unique personal os — all apps, interfaces, walled gardens etc gone
+
+Jakub Krcmar
+Jakub Krcmar
+@jakubkrcmar
+Yeah this was 1,000% worth it. Separate Claude subscription + Clawd, managing Claude Code / Codex sessions I can kick off anywhere, autonomously running tests on my app and capturing errors through a sentry webhook then resolving them and opening PRs... The future is here.
+
+Nat Eliason
+Nat Eliason
+@nateliason
+After years of AI hype, I thought nothing could faze me. Then I installed @openclaw. From a nervous "hi what can you do?" to full throttle - design, code review, taxes, PM, content pipelines... AI as teammate, not tool. The endgame of digital employees is here.
+
+Yucheng L
+Yucheng L
+@lycfyi
+I've been saying for like six months that even if LLMs suddenly stopped improving, we could spend *years* discovering new transformative uses. @openclaw feels like that kind of "just had to glue all the parts together" leap forward. Incredible experience.
+
+Mark Jaquith
+Mark Jaquith
+@markjaquith
+The fact that it's hackable (and more importantly, self-hackable) and hostable on-prem will make sure tech like this DOMINATES conventional SaaS imo
+
+Max Rovensky
+Max Rovensky
+@rovensky
+Using @openclaw for a week now and it genuinely feels like early AGI. The gap between "what I can imagine" and "what actually works" has never been smaller.
+
+Tobi
+Tobi
+@tobi_bsf
+@openclaw is insane I'm literally on my phone in a telegram chat and it's communicating with codex cli on my computer creating detailed spec files while out on a walk with my dog. Wtffff
+
+Conrad Sasheen
+Conrad Sasheen
+@conradsagewiz
+Yeah this was 1,000% worth it. Separate Claude subscription + Clawd, managing Claude Code / Codex sessions I can kick off anywhere, autonomously running tests on my app and capturing errors through a sentry webhook then resolving them and opening PRs... The future is here.
+
+Nat Eliason
+Nat Eliason
+@nateliason
+After years of AI hype, I thought nothing could faze me. Then I installed @openclaw. From a nervous "hi what can you do?" to full throttle - design, code review, taxes, PM, content pipelines... AI as teammate, not tool. The endgame of digital employees is here.
+
+Yucheng L
+Yucheng L
+@lycfyi
+I've been saying for like six months that even if LLMs suddenly stopped improving, we could spend *years* discovering new transformative uses. @openclaw feels like that kind of "just had to glue all the parts together" leap forward. Incredible experience.
+
+Mark Jaquith
+Mark Jaquith
+@markjaquith
+The fact that it's hackable (and more importantly, self-hackable) and hostable on-prem will make sure tech like this DOMINATES conventional SaaS imo
+
+Max Rovensky
+Max Rovensky
+@rovensky
+Using @openclaw for a week now and it genuinely feels like early AGI. The gap between "what I can imagine" and "what actually works" has never been smaller.
+
+Tobi
+Tobi
+@tobi_bsf
+@openclaw is insane I'm literally on my phone in a telegram chat and it's communicating with codex cli on my computer creating detailed spec files while out on a walk with my dog. Wtffff
+
+Conrad Sasheen
+Conrad Sasheen
+@conradsagewiz
+OpenClaw is trending. MyClaw makes it usable.
+
+Frequently asked questions
+
+What is OpenClaw?
++
+
+Is this an official OpenClaw service?
++
+
+How do I get started?
++
+
+How does billing work?
++
+
+How is my data handled?
++
+
+What if I want a refund?
++
+OpenClaw
+Start your AI journey today.
+Get your personal AI assistant in minutes.
+
+Get Started
+MyClaw exists for one reason:

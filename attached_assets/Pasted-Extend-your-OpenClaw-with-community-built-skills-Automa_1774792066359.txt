@@ -1,0 +1,220 @@
+Extend your OpenClaw with community-built skills. Automate workflows, add integrations, and unlock new capabilities.
+
+Search skills...
+All
+💻 Coding Agents & IDEs
+🌐 Web & Frontend
+☁️ DevOps & Cloud
+🔍 Search & Research
+🤖 Browser & Automation
+📋 Productivity & Tasks
+🧠 AI & LLMs
+⌨️ CLI Utilities
+🔀 Git & GitHub
+🎨 Design & Media
+💬 Communication
+📊 Data & Analytics
+📄 PDF & Documents
+🔒 Security & Passwords
+🏡 Smart Home & IoT
+Showing 124 skills
+Popular
+Newest
+Top Rated
+Featured
+Browser & Automation
+🤖
+Agent Browser
+A fast Rust-based headless browser automation CLI with Node.js fallback that enables AI agents to navigate, click, type, and snapshot pages via structured commands.
+
+by TheSethRose
+
+0
+Install
+Coding Agents & IDEs
+🖥️
+Browser Use
+Persistent browser automation CLI for navigating websites, filling forms, taking screenshots, extracting data, and running autonomous cloud browser agents — all from your AI agent.
+
+by shawn pana
+
+44
+18.7k
+Install
+Design & Media
+🎨
+Gmail
+Full Gmail API integration with managed OAuth — read, send, search, label, and manage emails, threads, and drafts directly from your AI agent.
+
+by byungkyu
+
+52
+20.4k
+Install
+Productivity & Tasks
+📋
+Find Skills
+Helps users discover and install ClawHub skills by searching the skill registry and presenting matching results with install commands.
+
+by JimLiuxinghai
+
+0
+Install
+PDF & Documents
+📑
+Humanizer
+Detect and remove signs of AI-generated writing from text, making it sound more natural and human-written based on Wikipedia's AI writing patterns guide.
+
+by B*T
+
+291
+32.7k
+Install
+Design & Media
+🖼️
+Proactive Agent
+Makes AI coding agents proactive — anticipate user needs, flag issues, and suggest improvements without waiting to be asked.
+
+by halthelobster
+
+0
+Install
+Productivity & Tasks
+📋
+Desktop Control
+Advanced desktop automation with pixel-perfect mouse control, keyboard input, screen capture, window management, and clipboard operations. Built on PyAutoGUI.
+
+by matagul
+
+0
+Install
+Productivity & Tasks
+📝
+YouTube Watcher
+Fetch and read transcripts from YouTube videos for summarization, question answering, and content extraction.
+
+by Michaelgathara
+
+180
+23.3k
+Install
+Design & Media
+🎨
+Automation Workflows
+Design, implement, and maintain no-code automation workflows for solopreneurs using Zapier, Make, or n8n — from identifying what to automate to calculating ROI.
+
+by Jatin Khatri
+
+101
+22.8k
+Install
+Search & Research
+🔬
+Elite Longterm Memory
+Multi-layered AI agent memory system combining session state, vector search, git-notes, curated archives, and optional cloud backup — so your agent never loses context across sessions.
+
+by NextFrontierBuilds
+
+96
+21.0k
+Install
+PDF & Documents
+📄
+Brave Search
+Perform web searches and extract page content as markdown using the Brave Search API, with no browser required.
+
+by Peter Steinberger
+
+117
+28.1k
+Install
+Design & Media
+🎨
+Frontend Design
+Generate distinctive, production-grade frontend interfaces with bold aesthetic direction — avoiding generic AI aesthetics in favor of memorable, polished design.
+
+by Peter Steinberger
+
+169
+22.0k
+Install
+PDF & Documents
+📑
+Clawdbot Documentation Expert
+Navigate, search, and reference Clawdbot documentation with decision trees, full-text indexing, version tracking, and ready-to-use config snippets.
+
+by NicholasSpisak
+
+223
+23.1k
+Install
+Search & Research
+📚
+Tavily Web Search
+Search the web using the Tavily API with AI-powered results and content extraction from web pages.
+
+by arun-8687
+
+0
+Install
+Browser & Automation
+🕸️
+Auto-Updater Skill
+Keep Clawdbot and all installed skills up to date automatically with a daily cron job that checks for updates, applies them, and sends you a summary.
+
+by maximeprades
+
+193
+27.1k
+Install
+Productivity & Tasks
+📋
+Stock Market Pro
+Yahoo Finance-powered stock analysis toolkit with real-time quotes, fundamentals, ASCII trends, and publication-ready PNG charts with technical indicators (RSI, MACD, Bollinger Bands, VWAP, ATR).
+
+by ClawMaker
+
+0
+Install
+Browser & Automation
+🤖
+Free Ride - Unlimited free AI
+Configure OpenClaw to use free AI models from OpenRouter with automatic quality ranking, fallback chains, and rate-limit handling.
+
+by Shaishav Pidadi
+
+212
+27.8k
+Install
+Communication
+📨
+Humanize AI text
+Detect and transform AI-generated text to sound natural and bypass AI detectors like GPTZero, Turnitin, and Originality.ai.
+
+by moltbro
+
+111
+25.7k
+Install
+Productivity & Tasks
+✅
+Caldav Calendar
+Sync and query CalDAV calendars from iCloud, Google, Fastmail, and Nextcloud using vdirsyncer and khal. View, create, search, and edit calendar events directly from the terminal on Linux.
+
+by Asleep
+
+162
+16.4k
+Install
+Productivity & Tasks
+📝
+Outlook
+Microsoft Outlook integration via Microsoft Graph API with managed OAuth. Read, send, and manage emails, calendar events, contacts, and mail folders without handling tokens yourself.
+
+by byungkyu
+
+0
+Install
+Previous
+Page 1 of 7
+Next

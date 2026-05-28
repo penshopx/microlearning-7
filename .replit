@@ -1,0 +1,51 @@
+modules = ["nodejs-20", "web"]
+[agent]
+expertMode = true
+integrations = ["javascript_openai_ai_integrations:2.0.0", "javascript_database:1.0.0"]
+stack = "BEST_EFFORT_FALLBACK"
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+NEXT_PUBLIC_SUPABASE_URL = "https://gzgzxpqmysfemwgmwova.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd6Z3p4cHFteXNmZW13Z213b3ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MDk2OTEsImV4cCI6MjA4ODE4NTY5MX0.6xIZjQ_QBpXI4kJ6K--2rtTnVB2Nm8b5b5N_KQ11xvI"
+SUPABASE_DB_PASSWORD = "l0SF7XNEAcVQs05M-Y5OivjPx_CRuWXW"
+MAYAR_API_KEY = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlYjQ2Nzg3OS1lZDFjLTQ5OGMtYTdiZC01ZGMzZDFhOTlkMTciLCJhY2NvdW50SWQiOiJmZjM0NzMwMy0zZDMzLTRmOTEtYTBlNi00MWU3ZjE2MzM2MzMiLCJjcmVhdGVkQXQiOiIxNzcyNzc2ODg2ODY3Iiwicm9sZSI6ImRldmVsb3BlciIsInN1YiI6InBlbnNob3B4QGdtYWlsLmNvbSIsIm5hbWUiOiJXdXJ5YW50byIsImxpbmsiOiJ3dXJ5YW50by1rdXNkamFsaSIsImlzU2VsZkRvbWFpbiI6bnVsbCwiaWF0IjoxNzcyNzc2ODg2fQ.T9RUQD4ceSqn5LFXDbihKYkKzpopIhqpN1HF-_Ugg5gwm_MVwpD9l5RzDq_U8nSJu_oe5VuQOO6p9ciNpfOXOX19htPEm3gJN7HOgumBlE5ojyi16z6v6MapbKsjuymBLm2A7DzkfKhyFMDmaux__fgc6Fc3l1NXy2WFN5lUVkaUKQVcJ_l2ndbK4xtVYk-0UFBScFODYRwGC33WQeif3NIAl1FS0StjxSyCr8HO4HOY3VsrMiZFxF4MGvQn5sbF2RhbhCITQ1DnU5AWzvB-VQSew1XfL1Rdgj_ydMN7sEOniRukq5Am4MtvX-Q1GTvTAvXknDjKULNf5mI_XFXK8Q"
+MAYAR_IS_PRODUCTION = "false"
+NEXT_PUBLIC_BASE_URL = "https://837a1772-e303-464b-8aaf-0f784f461fee-00-2m9ujmwfgmu1r.riker.replit.dev"
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["npm", "run", "start"]
+build = ["npm", "run", "build"]
