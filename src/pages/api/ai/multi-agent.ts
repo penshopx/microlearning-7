@@ -45,14 +45,18 @@ Balas HANYA dengan JSON valid:
 }
 
 /* ── Main handler ───────────────────────────────────── */
+export const config = { api: { responseLimit: false } };
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  const { message, history = [], preferredAgent, sessionId, memoryContext = "" } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: "message is required" });
+
+  const { initSSE, sseChunk, sseEvent, sseDone, sseError } = await import("@/lib/sse");
+  initSSE(res);
+
   try {
-    const { message, history = [], preferredAgent, sessionId, memoryContext = "" } = req.body;
-
-    if (!message?.trim()) return res.status(400).json({ error: "message is required" });
-
     // Step 1: route
     let agentId: AgentId;
     let routingReason: string;
@@ -78,29 +82,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ? `${agent.systemPrompt}${citationInstruction}\n\n${memoryContext}`
       : `${agent.systemPrompt}${citationInstruction}`;
 
-    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    const msgs: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
       { role: "system", content: systemContent },
     ];
 
-    // Include recent history
     const recentHistory = history.slice(-8);
     for (const msg of recentHistory) {
       if (msg.role === "user" || msg.role === "assistant") {
-        messages.push({ role: msg.role, content: msg.content });
+        msgs.push({ role: msg.role, content: msg.content });
       }
     }
-    messages.push({ role: "user", content: message });
+    msgs.push({ role: "user", content: message });
 
-    // Step 3: get specialist response
-    const specialistResp = await openai.chat.completions.create({
+    // Step 3: stream specialist response
+    let response = "";
+    const specialistStream = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages,
+      messages: msgs,
       max_completion_tokens: 1500,
+      stream: true,
     });
 
-    const response = specialistResp.choices[0]?.message?.content || "Maaf, saya tidak dapat memproses permintaan ini saat ini.";
+    for await (const chunk of specialistStream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        response += delta;
+        sseChunk(res, delta);
+      }
+    }
 
-    // Step 4: generate follow-up suggestions
+    // Step 4: generate follow-up suggestions (non-streaming, fast)
     const followupPrompt = `Berdasarkan pertanyaan "${message}" dan jawaban yang diberikan oleh ${agent.name} (${agent.title}), buat 3 pertanyaan follow-up yang relevan dan berguna untuk pengguna. Singkat, masing-masing maksimal 10 kata. Balas hanya JSON: {"followups": ["...", "...", "..."]}`;
 
     const followupResp = await openai.chat.completions.create({
@@ -113,32 +124,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const followupRaw = JSON.parse(followupResp.choices[0]?.message?.content || "{}");
     const followups: string[] = followupRaw.followups || [];
 
-    return res.status(200).json({
-      success: true,
-      agent: {
-        id: agent.id,
-        name: agent.name,
-        title: agent.title,
-        icon: agent.icon,
-        color: agent.color,
-        bg: agent.bg,
-        accent: agent.accent,
-      },
+    sseEvent(res, "done", {
+      agent: { id: agent.id, name: agent.name, title: agent.title, icon: agent.icon, color: agent.color, bg: agent.bg, accent: agent.accent },
       response,
       followups,
       routing: { reason: routingReason, confidence, manual: !!preferredAgent },
       sessionId,
     });
+    sseDone(res);
 
   } catch (err) {
     console.error("Multi-agent error:", err);
     const aiErr = classifyOpenAIError(err);
-    if (aiErr.isAIUnavailable) {
-      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
-    }
-    return res.status(500).json({
-      error: "Gagal memproses permintaan multi-agent",
-      details: err instanceof Error ? err.message : "Unknown error",
-    });
+    sseError(res, aiErr.isAIUnavailable ? aiErr.userMessage : "Gagal memproses permintaan multi-agent");
   }
 }

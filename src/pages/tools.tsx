@@ -249,15 +249,31 @@ export default function ToolsPage() {
     setOutput(null);
     setError(null);
     try {
+      const { readSSE } = await import("@/lib/sse-reader");
       const res = await fetch("/api/ai/run-tool", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ toolId: selectedTool.id, formData }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Gagal");
-      setOutput(data.output);
-      setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as any).error || "Gagal menghubungi server");
+      }
+
+      setOutput(""); // show output panel immediately
+      await readSSE(res.body, {
+        onChunk: (chunk) => setOutput(prev => (prev ?? "") + chunk),
+        onEvent: (event, payload) => {
+          if (event === "error") {
+            setError((payload as { error: string }).error);
+            setOutput(null);
+          }
+        },
+        onDone: () => {
+          setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+        },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
@@ -655,7 +671,7 @@ export default function ToolsPage() {
                   )}
 
                   {/* Output */}
-                  {output && (
+                  {output !== null && (
                     <div ref={outputRef} className="flex flex-col gap-3">
                       {/* Output header */}
                       <div className="flex items-center justify-between">

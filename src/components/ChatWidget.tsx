@@ -260,6 +260,7 @@ export function ChatWidget() {
     setIsLoading(true);
 
     try {
+      const { readSSE } = await import("@/lib/sse-reader");
       const chatHistory = messages
         .filter(m => m.id !== "welcome" && (m.role === "user" || m.role === "bot"))
         .map(m => ({ role: m.role === "user" ? "user" : "bot", text: m.text }));
@@ -274,20 +275,62 @@ export function ChatWidget() {
         })
       });
 
-      const data = await response.json();
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error((data as any).error || "Gagal menghubungi server");
+      }
 
-      const botMsg: Message = {
-        id: Date.now().toString() + "_bot",
-        role: "bot",
-        text: data.reply || "Maaf, ada gangguan. Coba lagi ya.",
-        metadata: {
-          quickReplies: data.quick_replies,
-          relatedArticles: data.related_articles,
-          featureLinks: data.feature_links,
-        }
-      };
+      let isFirstChunk = true;
+      const botId = Date.now().toString() + "_bot";
+      let fullText = "";
 
-      setMessages(prev => [...prev, botMsg]);
+      await readSSE(response.body, {
+        onChunk: (chunk) => {
+          fullText += chunk;
+          if (isFirstChunk) {
+            isFirstChunk = false;
+            setMessages(prev => [...prev, { id: botId, role: "bot", text: chunk }]);
+          } else {
+            setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last?.id !== botId) return prev;
+              return [...prev.slice(0, -1), { ...last, text: fullText }];
+            });
+          }
+        },
+        onEvent: (event, payload) => {
+          if (event === "done") {
+            const meta = payload as any;
+            setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last?.id !== botId) return prev;
+              return [...prev.slice(0, -1), {
+                ...last,
+                text: fullText || last.text,
+                metadata: {
+                  quickReplies: meta.quick_replies,
+                  relatedArticles: meta.related_articles,
+                  featureLinks: meta.feature_links,
+                },
+              }];
+            });
+          } else if (event === "error") {
+            const errPayload = payload as any;
+            const errText = errPayload.error || "Maaf, ada gangguan. Coba lagi ya.";
+            if (isFirstChunk) {
+              setMessages(prev => [...prev, { id: botId, role: "bot", text: errText }]);
+            }
+          }
+        },
+        onDone: () => {
+          if (isFirstChunk) {
+            setMessages(prev => [...prev, {
+              id: botId, role: "bot",
+              text: "Maaf, ada gangguan. Coba lagi ya.",
+            }]);
+          }
+        },
+      });
 
     } catch (error) {
       console.error("Chat error:", error);
@@ -431,7 +474,7 @@ export function ChatWidget() {
                   </div>
                 </div>
               ))}
-              {isLoading && (
+              {isLoading && messages[messages.length - 1]?.role !== "bot" && (
                 <div className="flex gap-3">
                   <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center">
                     <Sparkles className="w-4 h-4 text-green-600" />

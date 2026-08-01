@@ -611,30 +611,81 @@ export default function AIAgentsPage() {
         setMessages(prev => [...prev, collabMsg]);
 
       } else {
-        /* Orchestrator-Worker Pattern */
+        /* Orchestrator-Worker Pattern — streaming specialist response */
+        const { readSSE } = await import("@/lib/sse-reader");
         const res = await fetch("/api/ai/multi-agent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: content, history: historyForApi, preferredAgent: effectiveAgent, sessionId, memoryContext: memCtx }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Gagal mendapat respons");
 
-        stopEventStream();
-        setActiveAgent(data.agent);
-        setSessionAgents(prev => {
-          const next = new Map(prev);
-          next.set(data.agent.id as AgentId, (next.get(data.agent.id as AgentId) || 0) + 1);
-          return next;
+        if (!res.ok || !res.body) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error((data as any).error || "Gagal mendapat respons");
+        }
+
+        let isFirstChunk = true;
+        const msgId = genId();
+
+        await readSSE(res.body, {
+          onChunk: (chunk) => {
+            if (isFirstChunk) {
+              isFirstChunk = false;
+              stopEventStream();
+              setMessages(prev => [...prev, {
+                id: msgId, role: "assistant",
+                content: chunk,
+                timestamp: new Date(),
+              }]);
+            } else {
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.id !== msgId) return prev;
+                return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
+              });
+            }
+          },
+          onEvent: (event, payload) => {
+            if (event === "done") {
+              const meta = payload as any;
+              setActiveAgent(meta.agent);
+              setSessionAgents(prev => {
+                const next = new Map(prev);
+                next.set(meta.agent.id as AgentId, (next.get(meta.agent.id as AgentId) || 0) + 1);
+                return next;
+              });
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.id !== msgId) return prev;
+                return [...prev.slice(0, -1), {
+                  ...last,
+                  agent: meta.agent,
+                  followups: meta.followups,
+                  routing: meta.routing,
+                }];
+              });
+            } else if (event === "error") {
+              stopEventStream();
+              const errPayload = payload as any;
+              const errContent = `⚠️ **Terjadi Kesalahan**\n\n${errPayload.error}\n\nSilakan coba lagi.`;
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last?.id === msgId) return [...prev.slice(0, -1), { ...last, content: errContent }];
+                return [...prev, { id: genId(), role: "assistant", content: errContent, timestamp: new Date() }];
+              });
+            }
+          },
+          onDone: () => {
+            stopEventStream();
+            if (isFirstChunk) {
+              setMessages(prev => [...prev, {
+                id: msgId, role: "assistant",
+                content: "Maaf, saya tidak dapat memproses permintaan ini saat ini.",
+                timestamp: new Date(),
+              }]);
+            }
+          },
         });
-
-        const assistantMsg: AgentMessage = {
-          id: genId(), role: "assistant",
-          content: data.response, agent: data.agent,
-          followups: data.followups, routing: data.routing,
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, assistantMsg]);
       }
     } catch (err) {
       stopEventStream();

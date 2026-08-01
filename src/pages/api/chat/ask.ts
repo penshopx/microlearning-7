@@ -1,6 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { classifyOpenAIError } from "@/lib/openai-error";
+import { initSSE, sseChunk, sseEvent, sseDone, sseError } from "@/lib/sse";
+
+export const config = { api: { responseLimit: false } };
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -12,14 +15,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const { message, history, currentPage } = req.body;
+  if (!message) {
+    return res.status(400).json({ error: "Missing message" });
+  }
+
+  initSSE(res);
+
   try {
-    const { message, history, currentPage } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: "Missing message" });
-    }
-
-    let botReply: string;
+    let fullReply = "";
 
     try {
       const chatHistory = (history || []).slice(-12).map((m: any) => ({
@@ -31,7 +35,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ? `\n\n[Konteks: User sedang di halaman "${currentPage}". Berikan jawaban yang relevan dengan konteks halaman ini jika memungkinkan.]`
         : "";
 
-      const response = await openai.chat.completions.create({
+      const stream = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: CHAESA_SYSTEM_PROMPT + contextualPrompt },
@@ -39,39 +43,46 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           { role: "user", content: message },
         ],
         max_completion_tokens: 8192,
+        stream: true,
       });
 
-      botReply = response.choices[0]?.message?.content || generateSmartResponse(message);
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) {
+          fullReply += delta;
+          sseChunk(res, delta);
+        }
+      }
     } catch (error) {
       const aiErr = classifyOpenAIError(error);
       if (aiErr.isAIUnavailable) {
-        botReply = `⚠️ ${aiErr.userMessage}`;
+        fullReply = `⚠️ ${aiErr.userMessage}`;
       } else {
         console.error("OpenAI API error, falling back to knowledge base:", error);
-        botReply = generateSmartResponse(message);
+        fullReply = generateSmartResponse(message);
       }
+      sseChunk(res, fullReply);
     }
 
-    const needsHumanSupport = detectEscalation(message, botReply);
-    const quickReplies = generateQuickReplies(message, currentPage);
-    const featureLinks = extractFeatureLinks(botReply, message);
+    if (!fullReply) {
+      fullReply = generateSmartResponse(message);
+      sseChunk(res, fullReply);
+    }
 
-    return res.status(200).json({
-      reply: botReply,
+    const needsHumanSupport = detectEscalation(message, fullReply);
+    const quickReplies = generateQuickReplies(message, currentPage);
+    const featureLinks = extractFeatureLinks(fullReply, message);
+
+    sseEvent(res, "done", {
       needs_escalation: needsHumanSupport,
       related_articles: [],
       quick_replies: quickReplies,
       feature_links: featureLinks,
     });
+    sseDone(res);
   } catch (error) {
     console.error("Chat API error:", error);
-    return res.status(200).json({
-      reply: "Maaf, ada sedikit gangguan. Bisa Kamu ulangi pertanyaannya?",
-      needs_escalation: false,
-      related_articles: [],
-      quick_replies: ["Apa itu Chaesa Live?", "Fitur apa saja?", "Bantuan teknis"],
-      feature_links: [],
-    });
+    sseError(res, "Maaf, ada sedikit gangguan. Bisa Kamu ulangi pertanyaannya?");
   }
 }
 
