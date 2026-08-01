@@ -45,7 +45,9 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.4",
     "date-fns": "^3.6.0",
+    "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.8.3",
+    "pg": "^8.22.0",
     "embla-carousel-react": "^8.5.2",
     "framer-motion": "^12.0.6",
     "input-otp": "^1.4.2",
@@ -53,7 +55,6 @@
     "micro": "^10.0.1",
     "next": "^15.5.9",
     "next-themes": "^0.4.4",
-    "npm": "^11.0.0",
     "openai": "^6.27.0",
     "p-limit": "^7.3.0",
     "p-retry": "^7.1.1",
@@ -78,16 +79,34 @@
     "node": ">=22"
   },
   "overrides": {
-    "tar": "^7.4.3"
+    "tar": "^7.4.3",
+    "undici": ">=6.27.0",
+    "@tootallnate/once": ">=2.0.1",
+    "esbuild": ">=0.25.0",
+    "sharp": ">=0.35.0",
+    "brace-expansion": ">=1.1.17",
+    "next": {
+      "postcss": ">=8.5.18"
+    },
+    "@vercel/static-config": {
+      "ajv": ">=8.18.0"
+    },
+    "@vercel/node": {
+      "path-to-regexp": ">=6.3.0"
+    },
+    "@vercel/remix-builder": {
+      "path-to-regexp": ">=6.3.0"
+    }
   },
   "devDependencies": {
     "@softgenai/element-tagger": "^0.0.2",
     "@types/node": "^22",
+    "@types/pg": "^8.11.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^9.27.0",
     "eslint-config-next": "^15.2.8",
-    "postcss": "^8",
+    "postcss": ">=8.5.18",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }
