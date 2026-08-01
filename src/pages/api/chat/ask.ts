@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
+import { classifyOpenAIError } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -42,7 +43,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       botReply = response.choices[0]?.message?.content || generateSmartResponse(message);
     } catch (error) {
-      const { classifyOpenAIError } = await import("@/lib/openai-error");
       const aiErr = classifyOpenAIError(error);
       if (aiErr.isAIUnavailable) {
         botReply = `⚠️ ${aiErr.userMessage}`;
@@ -944,3 +944,4 @@ function generateQuickReplies(userMessage: string, currentPage?: string): string
 
   return ["Fitur apa saja?", "Saya mau belajar", "Untuk HRD/Training", "Berapa harganya?"];
 }
+
