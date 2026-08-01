@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { ChatWidget } from "@/components/ChatWidget";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { CommandPalette } from "@/components/CommandPalette";
+import { AdminAIWarning } from "@/components/AdminAIWarning";
 
 function RouteLoadingBar() {
   const router = useRouter();
@@ -82,6 +83,7 @@ export default function App({ Component, pageProps }: AppProps) {
       <ChatWidget />
       <OnboardingWizard />
       <CommandPalette />
+      <AdminAIWarning />
     </ThemeProvider>
   );
 }
