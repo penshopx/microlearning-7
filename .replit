@@ -49,3 +49,7 @@ NEXT_PUBLIC_BASE_URL = "https://837a1772-e303-464b-8aaf-0f784f461fee-00-2m9ujmwf
 deploymentTarget = "autoscale"
 run = ["npm", "run", "start"]
 build = ["npm", "run", "build"]
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 120000

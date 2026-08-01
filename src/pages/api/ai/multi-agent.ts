@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { AGENTS } from "@/lib/agents-data";
 import type { AgentId } from "@/lib/agents-data";
+import { classifyOpenAIError } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -131,6 +132,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (err) {
     console.error("Multi-agent error:", err);
+    const aiErr = classifyOpenAIError(err);
+    if (aiErr.isAIUnavailable) {
+      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+    }
     return res.status(500).json({
       error: "Gagal memproses permintaan multi-agent",
       details: err instanceof Error ? err.message : "Unknown error",

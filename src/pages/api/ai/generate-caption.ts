@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
+import { classifyOpenAIError } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -46,6 +47,8 @@ export default async function handler(
     try {
       result = await generateWithAI(topic, platform as Platform, tone as Tone);
     } catch (error) {
+      const aiErr = classifyOpenAIError(error);
+      if (aiErr.isAIUnavailable) throw error; // propagate quota/rate-limit to outer catch
       console.error("OpenAI API error, falling back to template:", error);
       result = generateFallback(topic, platform as Platform, tone as Tone);
     }
@@ -59,6 +62,10 @@ export default async function handler(
     });
   } catch (error) {
     console.error("Generate Caption Error:", error);
+    const aiErr = classifyOpenAIError(error);
+    if (aiErr.isAIUnavailable) {
+      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+    }
     return res.status(500).json({
       error: "Failed to generate caption",
       details: error instanceof Error ? error.message : "Unknown error",

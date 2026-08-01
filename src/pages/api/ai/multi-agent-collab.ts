@@ -9,6 +9,7 @@
    3. A synthesis agent combines their insights into actionable conclusions */
 
 import type { NextApiRequest, NextApiResponse } from "next";
+import { classifyOpenAIError } from "@/lib/openai-error";
 import OpenAI from "openai";
 import { AGENTS } from "@/lib/agents-data";
 import type { AgentId } from "@/lib/agents-data";
@@ -193,6 +194,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (err) {
     console.error("Multi-agent collab error:", err);
+    const aiErr = classifyOpenAIError(err);
+    if (aiErr.isAIUnavailable) {
+      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+    }
     return res.status(500).json({
       error: "Gagal memproses kolaborasi multi-agent",
       details: err instanceof Error ? err.message : "Unknown error",

@@ -66,6 +66,9 @@ export default async function handler(
     try {
       result = await generateWithAI(topic, difficulty as Difficulty, count, types);
     } catch (error) {
+      const { classifyOpenAIError } = await import("@/lib/openai-error");
+      const aiErr = classifyOpenAIError(error);
+      if (aiErr.isAIUnavailable) throw error; // propagate quota/rate-limit to outer catch
       console.error("OpenAI API error, falling back to template:", error);
       result = generateFallback(topic, difficulty as Difficulty, count, types);
     }
@@ -80,6 +83,11 @@ export default async function handler(
     });
   } catch (error) {
     console.error("Generate Exam Error:", error);
+    const { classifyOpenAIError } = await import("@/lib/openai-error");
+    const aiErr = classifyOpenAIError(error);
+    if (aiErr.isAIUnavailable) {
+      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+    }
     return res.status(500).json({
       error: "Failed to generate exam",
       details: error instanceof Error ? error.message : "Unknown error",

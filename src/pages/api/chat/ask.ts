@@ -42,8 +42,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       botReply = response.choices[0]?.message?.content || generateSmartResponse(message);
     } catch (error) {
-      console.error("OpenAI API error, falling back to knowledge base:", error);
-      botReply = generateSmartResponse(message);
+      const { classifyOpenAIError } = await import("@/lib/openai-error");
+      const aiErr = classifyOpenAIError(error);
+      if (aiErr.isAIUnavailable) {
+        botReply = `⚠️ ${aiErr.userMessage}`;
+      } else {
+        console.error("OpenAI API error, falling back to knowledge base:", error);
+        botReply = generateSmartResponse(message);
+      }
     }
 
     const needsHumanSupport = detectEscalation(message, botReply);

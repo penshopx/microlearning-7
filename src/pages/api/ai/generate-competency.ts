@@ -167,6 +167,11 @@ Hasilkan JSON lengkap dengan format:
     return res.status(200).json({ success: true, data: parsed, type });
   } catch (error) {
     console.error("Competency AI generation error:", error);
+    const { classifyOpenAIError } = await import("@/lib/openai-error");
+    const aiErr = classifyOpenAIError(error);
+    if (aiErr.isAIUnavailable) {
+      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+    }
     return res.status(500).json({
       error: "Gagal generate konten AI",
       details: error instanceof Error ? error.message : "Unknown error",

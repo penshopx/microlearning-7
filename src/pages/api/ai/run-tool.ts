@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { AI_TOOLS } from "@/lib/tools-data";
+import { classifyOpenAIError } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -46,6 +47,10 @@ Sebutkan kode standar SNI/PP/ISO secara eksplisit ketika mereferensikan regulasi
 
   } catch (err) {
     console.error("run-tool error:", err);
+    const aiErr = classifyOpenAIError(err);
+    if (aiErr.isAIUnavailable) {
+      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+    }
     return res.status(500).json({
       error: "Gagal menjalankan tool",
       details: err instanceof Error ? err.message : "Unknown error",
