@@ -9,6 +9,8 @@ interface AuthState {
   userName: string;
   userId: string | null;
   isGuest: boolean;
+  /** True when the user's profiles row has role = "admin". Populated asynchronously after login. */
+  isAdmin: boolean;
 }
 
 export function useAuth(): AuthState {
@@ -16,9 +18,23 @@ export function useAuth(): AuthState {
   const [isLoading, setIsLoading] = useState(true);
   const [userName, setUserName] = useState("");
   const [isGuest, setIsGuest] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     let mounted = true;
+
+    async function fetchProfile(userId: string) {
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", userId)
+          .single();
+        if (mounted) setIsAdmin(data?.role === "admin");
+      } catch {
+        if (mounted) setIsAdmin(false);
+      }
+    }
 
     async function loadUser() {
       try {
@@ -34,6 +50,7 @@ export function useAuth(): AuthState {
             "User";
           setUserName(name);
           setIsGuest(false);
+          fetchProfile(session.user.id);
         } else {
           const guestData = typeof window !== "undefined"
             ? localStorage.getItem("chaesa_guest_user")
@@ -47,6 +64,7 @@ export function useAuth(): AuthState {
               setIsGuest(false);
             }
           }
+          setIsAdmin(false);
         }
       } catch (err) {
         console.error("Auth check error:", err);
@@ -68,10 +86,12 @@ export function useAuth(): AuthState {
             "User";
           setUserName(name);
           setIsGuest(false);
+          fetchProfile(session.user.id);
         } else {
           setUser(null);
           setUserName("");
           setIsGuest(false);
+          setIsAdmin(false);
         }
         setIsLoading(false);
       }
@@ -90,6 +110,7 @@ export function useAuth(): AuthState {
     userName,
     userId: user?.id || null,
     isGuest,
+    isAdmin,
   };
 }
 
