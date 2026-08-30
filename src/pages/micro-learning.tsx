@@ -41,11 +41,27 @@ import {
   Star,
   ShoppingBag,
   Filter,
+  ArrowRight,
+  BriefcaseBusiness,
+  Camera,
+  ClipboardCheck,
+  MessageSquareText,
+  Repeat2,
+  ShieldCheck,
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 
 type Course = Database["public"]["Tables"]["courses"]["Row"];
 type CourseModule = Database["public"]["Tables"]["course_modules"]["Row"];
+
+const workplaceTracks = [
+  { value: "construction", label: "Konstruksi", description: "K3, mutu, dan proyek" },
+  { value: "customer-service", label: "Customer Service", description: "Komunikasi dan penyelesaian masalah" },
+  { value: "sales", label: "Sales", description: "Discovery dan keberatan pelanggan" },
+  { value: "hr", label: "HR & People", description: "Interview dan coaching" },
+  { value: "operations", label: "Operasional", description: "SOP dan konsistensi proses" },
+  { value: "custom", label: "Bidang lain", description: "Sesuaikan dengan pekerjaanmu" },
+];
 
 export default function MicroLearning() {
   const router = useRouter();
@@ -62,6 +78,7 @@ export default function MicroLearning() {
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
+  const [selectedTrack, setSelectedTrack] = useState("construction");
 
   const categories = [
     { value: "all", label: "Semua" },
@@ -139,10 +156,18 @@ export default function MicroLearning() {
     setIsProcessing(true);
     try {
       // Step 1: Create course
+      const selectedTrackLabel =
+        workplaceTracks.find((track) => track.value === selectedTrack)?.label || "Bidang lain";
+      const contextualDescription = [
+        courseDescription.trim(),
+        `Domain kerja: ${selectedTrackLabel}.`,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
       const { data: course, error: courseError } = await microLearningService.createCourseFromMeeting(
         selectedMeeting,
         courseTitle,
-        courseDescription
+        contextualDescription
       );
 
       if (courseError || !course) throw courseError;
@@ -235,39 +260,111 @@ export default function MicroLearning() {
   return (
     <>
       <SEO
-        title="Micro-Learning Generator - Break Meetings into 5-Minute Modules | Chaesa Live"
-        description="Transform long meetings into bite-sized learning modules. AI automatically splits your content into 5-7 minute chunks with quizzes, slides, and more."
+        title="Workplace Coach - Belajar dari Pekerjaan Nyata | Chaesa Live"
+        description="Ubah meeting, SOP, dan masalah kerja menjadi misi belajar 5-15 menit yang bisa langsung dipraktikkan dan divalidasi."
       />
       <Head>
         <link rel="canonical" href="https://chaesa.live/micro-learning" />
       </Head>
 
-      <div className="min-h-screen bg-gradient-to-br from-blue-900 via-purple-900 to-pink-900">
-        <PageHeader title="Micro-Learning" icon={Zap} />
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900">
+        <PageHeader title="Workplace Coach" icon={BriefcaseBusiness} />
         <div className="container mx-auto px-4 py-8">
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <Zap className="w-10 h-10 text-yellow-400" />
-              <h1 className="text-4xl font-bold text-white">Micro-Learning Generator</h1>
+          <div className="mb-8 grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6 items-stretch">
+            <div className="rounded-2xl border border-blue-400/20 bg-black/30 p-6 md:p-8 shadow-2xl">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-200">
+                  <BriefcaseBusiness className="w-3.5 h-3.5" />
+                  AI Workplace Coach
+                </span>
+                <span className="text-xs text-slate-400">Chaesa Live</span>
+              </div>
+              <h1 className="max-w-3xl text-3xl md:text-5xl font-bold tracking-tight text-white">
+                Belajar dari pekerjaan nyata.
+              </h1>
+              <p className="mt-4 max-w-2xl text-base md:text-lg leading-relaxed text-slate-300">
+                Ubah meeting, SOP, dan masalah kerja menjadi misi singkat yang membantu setiap orang
+                belajar, praktik, mengirim bukti, lalu menerima feedback.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button
+                  onClick={() => setActiveTab("create")}
+                  className="bg-blue-500 text-white hover:bg-blue-400"
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Buat misi dari meeting
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => document.getElementById("mission-example")?.scrollIntoView({ behavior: "smooth" })}
+                  className="border-slate-600 bg-transparent text-slate-200 hover:bg-white/10 hover:text-white"
+                >
+                  Lihat contoh hasil
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+              <div className="mt-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { icon: Clock, label: "5–15 menit", text: "sekali latihan" },
+                  { icon: ClipboardCheck, label: "Praktik nyata", text: "bukan hanya quiz" },
+                  { icon: Repeat2, label: "Diulang berkala", text: "agar jadi kebiasaan" },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                    <item.icon className="w-4 h-4 text-blue-300 mb-2" />
+                    <p className="text-sm font-semibold text-white">{item.label}</p>
+                    <p className="text-xs text-slate-400 mt-1">{item.text}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <p className="text-gray-300 text-lg">
-              Transform long meetings into bite-sized 5-7 minute learning modules
-            </p>
+
+            <Card id="mission-example" className="border-blue-400/20 bg-blue-950/50 p-6 shadow-xl">
+              <div className="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">Contoh keluaran</p>
+                  <h2 className="mt-2 text-2xl font-bold text-white">Misi Hari Ini</h2>
+                </div>
+                <div className="rounded-xl bg-blue-400/15 p-3">
+                  <Zap className="w-6 h-6 text-blue-200" />
+                </div>
+              </div>
+              <h3 className="text-lg font-semibold text-white">Menangani pelanggan yang kecewa</h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                Latihan 7 menit untuk Customer Service: akui masalah, rangkum kebutuhan, dan
+                sepakati langkah berikutnya.
+              </p>
+              <div className="mt-5 space-y-3">
+                {[
+                  { icon: MessageSquareText, text: "Pelajari satu pola respons" },
+                  { icon: ClipboardCheck, text: "Jawab satu skenario keputusan" },
+                  { icon: Camera, text: "Kirim bukti praktik atau simulasi" },
+                  { icon: ShieldCheck, text: "Dapatkan feedback dan jadwal pengulangan" },
+                ].map((item) => (
+                  <div key={item.text} className="flex items-center gap-3 text-sm text-slate-200">
+                    <item.icon className="w-4 h-4 shrink-0 text-blue-300" />
+                    <span>{item.text}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">
+                Hasil: kemampuan dipraktikkan, bukan hanya ditandai selesai.
+              </div>
+            </Card>
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="bg-white/10 border border-white/20">
               <TabsTrigger value="create" className="data-[state=active]:bg-white/20">
                 <Sparkles className="w-4 h-4 mr-2" />
-                Create Course
+                Buat Misi
               </TabsTrigger>
               <TabsTrigger value="courses" className="data-[state=active]:bg-white/20">
                 <BookOpen className="w-4 h-4 mr-2" />
-                My Courses ({courses.length})
+                Misi Saya ({courses.length})
               </TabsTrigger>
               <TabsTrigger value="marketplace" className="data-[state=active]:bg-white/20">
                 <TrendingUp className="w-4 h-4 mr-2" />
-                Marketplace
+                Shared Missions
               </TabsTrigger>
               <TabsTrigger value="analytics" className="data-[state=active]:bg-white/20">
                 <Target className="w-4 h-4 mr-2" />
@@ -278,42 +375,65 @@ export default function MicroLearning() {
             {/* CREATE TAB */}
             <TabsContent value="create" className="space-y-6">
               <Card className="p-6 bg-white/5 border-white/10 backdrop-blur">
-                <h2 className="text-2xl font-bold text-white mb-4">
-                  Create Micro-Learning Course
-                </h2>
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="rounded-xl bg-blue-500/15 p-3">
+                    <ClipboardCheck className="w-6 h-6 text-blue-300" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">Buat misi dari meeting</h2>
+                    <p className="text-sm text-blue-200 mt-1">Meeting-to-Mission</p>
+                  </div>
+                </div>
                 <p className="text-gray-300 mb-6">
-                  Select a meeting recording and we'll automatically chunk it into 5-7 minute
-                  modules, complete with slides, quizzes, and summaries!
+                  Pilih rekaman meeting. AI akan mengambil keputusan dan konteks penting, lalu
+                  mengubahnya menjadi latihan 5–15 menit yang relevan untuk pekerjaan tim.
                 </p>
 
                 {/* Feature Preview */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                   <div className="p-4 bg-white/5 rounded-lg border border-white/10">
                     <Video className="w-8 h-8 text-blue-400 mb-2" />
-                    <h3 className="text-white font-semibold">Auto-Chunking</h3>
-                    <p className="text-sm text-gray-400">5-7 min modules</p>
+                    <h3 className="text-white font-semibold">Tarik konteks</h3>
+                    <p className="text-sm text-gray-400">Keputusan dan risiko meeting</p>
                   </div>
                   <div className="p-4 bg-white/5 rounded-lg border border-white/10">
                     <BookOpen className="w-8 h-8 text-green-400 mb-2" />
-                    <h3 className="text-white font-semibold">Mini Slides</h3>
-                    <p className="text-sm text-gray-400">3-5 slides each</p>
+                    <h3 className="text-white font-semibold">Misi singkat</h3>
+                    <p className="text-sm text-gray-400">5–15 menit per skill</p>
                   </div>
                   <div className="p-4 bg-white/5 rounded-lg border border-white/10">
                     <CheckCircle className="w-8 h-8 text-yellow-400 mb-2" />
-                    <h3 className="text-white font-semibold">Quick Quiz</h3>
-                    <p className="text-sm text-gray-400">3-5 questions</p>
+                    <h3 className="text-white font-semibold">Praktik + bukti</h3>
+                    <p className="text-sm text-gray-400">Checklist, catatan, atau foto</p>
                   </div>
                   <div className="p-4 bg-white/5 rounded-lg border border-white/10">
-                    <Award className="w-8 h-8 text-purple-400 mb-2" />
-                    <h3 className="text-white font-semibold">Gamification</h3>
-                    <p className="text-sm text-gray-400">Badges & points</p>
+                    <Repeat2 className="w-8 h-8 text-purple-400 mb-2" />
+                    <h3 className="text-white font-semibold">Feedback</h3>
+                    <p className="text-sm text-gray-400">Ulangi sampai jadi kebiasaan</p>
                   </div>
                 </div>
 
                 {/* Form */}
                 <div className="space-y-4">
                   <div>
-                    <Label className="text-white mb-2">Select Meeting Recording:</Label>
+                    <Label className="text-white mb-2">Bidang pekerjaan:</Label>
+                    <select
+                      className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white"
+                      value={selectedTrack}
+                      onChange={(e) => setSelectedTrack(e.target.value)}
+                    >
+                      {workplaceTracks.map((track) => (
+                        <option key={track.value} value={track.value} className="bg-slate-900">
+                          {track.label} — {track.description}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Pilihan ini membantu AI menggunakan bahasa dan contoh yang sesuai dengan pekerjaan.
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-white mb-2">Rekaman meeting:</Label>
                     <select
                       className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white"
                       value={selectedMeeting}
@@ -330,9 +450,9 @@ export default function MicroLearning() {
                   </div>
 
                   <div>
-                    <Label className="text-white mb-2">Course Title:</Label>
+                    <Label className="text-white mb-2">Judul misi:</Label>
                     <Input
-                      placeholder="e.g., Digital Marketing Masterclass"
+                      placeholder="Contoh: Menangani keterlambatan material"
                       value={courseTitle}
                       onChange={(e) => setCourseTitle(e.target.value)}
                       className="bg-white/10 border-white/20 text-white"
@@ -340,9 +460,9 @@ export default function MicroLearning() {
                   </div>
 
                   <div>
-                    <Label className="text-white mb-2">Description (Optional):</Label>
+                    <Label className="text-white mb-2">Konteks atau tujuan (opsional):</Label>
                     <textarea
-                      placeholder="Describe what this course teaches..."
+                      placeholder="Skill apa yang perlu dipraktikkan setelah meeting ini?"
                       value={courseDescription}
                       onChange={(e) => setCourseDescription(e.target.value)}
                       className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white h-24"
@@ -356,11 +476,11 @@ export default function MicroLearning() {
                     size="lg"
                   >
                     {isProcessing ? (
-                      <>Processing...</>
+                      <>Sedang menyusun misi...</>
                     ) : (
                       <>
                         <Sparkles className="w-5 h-5 mr-2" />
-                        Generate Micro-Learning Course
+                        Generate Workplace Mission
                       </>
                     )}
                   </Button>
@@ -369,61 +489,61 @@ export default function MicroLearning() {
 
               {/* How It Works */}
               <Card className="p-6 bg-white/5 border-white/10">
-                <h3 className="text-xl font-bold text-white mb-4">How It Works</h3>
+                <h3 className="text-xl font-bold text-white mb-4">Dari konteks kerja menjadi kebiasaan</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                   <div className="text-center">
                     <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-3">
                       <span className="text-white font-bold">1</span>
                     </div>
-                    <h4 className="text-white font-semibold mb-2">AI Analysis</h4>
+                    <h4 className="text-white font-semibold mb-2">Tarik konteks</h4>
                     <p className="text-sm text-gray-400">
-                      Analyze meeting transcript to detect topic changes
+                      AI menemukan keputusan, risiko, dan skill yang perlu dilatih
                     </p>
                   </div>
                   <div className="text-center">
                     <div className="w-12 h-12 bg-purple-500 rounded-full flex items-center justify-center mx-auto mb-3">
                       <span className="text-white font-bold">2</span>
                     </div>
-                    <h4 className="text-white font-semibold mb-2">Smart Chunking</h4>
+                    <h4 className="text-white font-semibold mb-2">Susun misi</h4>
                     <p className="text-sm text-gray-400">
-                      Split video into 5-7 minute modules at natural breakpoints
+                      Satu tujuan kerja dalam latihan 5–15 menit
                     </p>
                   </div>
                   <div className="text-center">
                     <div className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center mx-auto mb-3">
                       <span className="text-white font-bold">3</span>
                     </div>
-                    <h4 className="text-white font-semibold mb-2">Generate Content</h4>
+                    <h4 className="text-white font-semibold mb-2">Praktikkan</h4>
                     <p className="text-sm text-gray-400">
-                      Create slides, quizzes, summaries for each module
+                      Jawab skenario, gunakan checklist, lalu kirim bukti
                     </p>
                   </div>
                   <div className="text-center">
                     <div className="w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center mx-auto mb-3">
                       <span className="text-white font-bold">4</span>
                     </div>
-                    <h4 className="text-white font-semibold mb-2">Ready to Publish</h4>
+                    <h4 className="text-white font-semibold mb-2">Dapatkan feedback</h4>
                     <p className="text-sm text-gray-400">
-                      Export to any platform or sell in our marketplace
+                      Sistem menyarankan perbaikan dan pengulangan berikutnya
                     </p>
                   </div>
                 </div>
               </Card>
             </TabsContent>
 
-            {/* MY COURSES TAB */}
+            {/* MY MISSIONS TAB */}
             <TabsContent value="courses" className="space-y-4">
               {courses.length === 0 ? (
                 <Card className="p-12 bg-white/5 border-white/10 text-center">
                   <BookOpen className="w-16 h-16 text-gray-500 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-white mb-2">
-                    No courses yet
+                    Belum ada misi
                   </h3>
                   <p className="text-gray-400 mb-4">
-                    Create your first micro-learning course from a meeting recording
+                    Buat misi pertama dari rekaman meeting untuk membantu tim berlatih dari pekerjaan nyata.
                   </p>
                   <Button onClick={() => setActiveTab("create")}>
-                    Create Course Now
+                    Buat Misi Sekarang
                   </Button>
                 </Card>
               ) : (
@@ -440,16 +560,16 @@ export default function MicroLearning() {
                               {course.title}
                             </h3>
                             {course.is_published && (
-                              <Badge className="bg-green-500">Published</Badge>
+                              <Badge className="bg-green-500">Dibagikan</Badge>
                             )}
                           </div>
                           <p className="text-sm text-gray-400 mb-3">
-                            {course.description || "No description"}
+                            {course.description || "Misi praktik dari konteks pekerjaan"}
                           </p>
                           <div className="flex items-center gap-4 text-sm text-gray-500">
                             <div className="flex items-center gap-1">
                               <Video className="w-4 h-4" />
-                              {course.total_modules || 0} modules
+                              {course.total_modules || 0} langkah
                             </div>
                             <div className="flex items-center gap-1">
                               <Clock className="w-4 h-4" />
@@ -457,7 +577,7 @@ export default function MicroLearning() {
                             </div>
                             <div className="flex items-center gap-1">
                               <Users className="w-4 h-4" />
-                              {course.enrollments_count || 0} learners
+                              {course.enrollments_count || 0} peserta
                             </div>
                           </div>
                         </div>
@@ -471,7 +591,7 @@ export default function MicroLearning() {
                           className="flex-1"
                         >
                           <Play className="w-4 h-4 mr-1" />
-                          View
+                            Buka
                         </Button>
                         {!course.is_published && (
                           <Button
@@ -479,7 +599,7 @@ export default function MicroLearning() {
                             onClick={() => handlePublishCourse(course.id)}
                           >
                             <Share2 className="w-4 h-4 mr-1" />
-                            Publish
+                            Bagikan
                           </Button>
                         )}
                         <Button
@@ -496,20 +616,22 @@ export default function MicroLearning() {
               )}
             </TabsContent>
 
-            {/* MARKETPLACE TAB */}
+            {/* SHARED MISSIONS TAB */}
             <TabsContent value="marketplace" className="space-y-4">
               <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-bold text-white flex items-center gap-2">
                     <ShoppingBag className="w-6 h-6 text-yellow-400" />
-                    Marketplace
+                    Shared Missions
                   </h2>
-                  <p className="text-gray-400 text-sm mt-1">Temukan dan mulai belajar dari kursus yang tersedia</p>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Temukan misi praktik yang bisa langsung dipakai oleh tim atau diadaptasi untuk pekerjaanmu.
+                  </p>
                 </div>
                 <div className="relative w-full md:w-72">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <Input
-                    placeholder="Cari kursus..."
+                    placeholder="Cari misi atau skill..."
                     value={marketplaceSearch}
                     onChange={(e) => setMarketplaceSearch(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && loadMarketplaceCourses()}
@@ -549,14 +671,14 @@ export default function MicroLearning() {
                 <Card className="p-12 bg-white/5 border-white/10 text-center">
                   <ShoppingBag className="w-16 h-16 text-gray-500 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-white mb-2">
-                    Belum ada kursus di marketplace
+                    Belum ada misi yang dibagikan
                   </h3>
                   <p className="text-gray-400 mb-4">
-                    Jadilah yang pertama mempublikasikan kursus micro-learning!
+                    Bagikan misi pertama dari konteks pekerjaan timmu.
                   </p>
                   <Button onClick={() => setActiveTab("create")}>
                     <Sparkles className="w-4 h-4 mr-2" />
-                    Buat Kursus Sekarang
+                    Buat Misi Sekarang
                   </Button>
                 </Card>
               ) : (
@@ -577,7 +699,7 @@ export default function MicroLearning() {
                           {course.title}
                         </h3>
                         <p className="text-sm text-gray-400 mb-3 line-clamp-2">
-                          {course.description || "Kursus micro-learning interaktif"}
+                          {course.description || "Misi kerja interaktif"}
                         </p>
                         <div className="flex items-center gap-3 text-xs text-gray-500 mb-4">
                           <span className="flex items-center gap-1">
@@ -605,7 +727,7 @@ export default function MicroLearning() {
                           onClick={() => router.push(`/course/${course.id}`)}
                         >
                           <Play className="w-4 h-4 mr-2" />
-                          Mulai Belajar
+                          Mulai Misi
                         </Button>
                       </div>
                     </Card>
@@ -638,48 +760,48 @@ export default function MicroLearning() {
                       <Card className="p-5 bg-white/5 border-white/10">
                         <div className="flex items-center gap-3 mb-2">
                           <BookOpen className="w-6 h-6 text-blue-400" />
-                          <span className="text-sm text-gray-400">Total Courses</span>
+                          <span className="text-sm text-gray-400">Total Misi</span>
                         </div>
                         <p className="text-3xl font-bold text-white">{totalCourses}</p>
-                        <p className="text-xs text-gray-500 mt-1">{publishedCourses} published</p>
+                        <p className="text-xs text-gray-500 mt-1">{publishedCourses} dibagikan</p>
                       </Card>
                       <Card className="p-5 bg-white/5 border-white/10">
                         <div className="flex items-center gap-3 mb-2">
                           <Video className="w-6 h-6 text-green-400" />
-                          <span className="text-sm text-gray-400">Total Modules</span>
+                          <span className="text-sm text-gray-400">Langkah Praktik</span>
                         </div>
                         <p className="text-3xl font-bold text-white">{totalModules}</p>
-                        <p className="text-xs text-gray-500 mt-1">avg {avgModules}/course</p>
+                        <p className="text-xs text-gray-500 mt-1">rata-rata {avgModules}/misi</p>
                       </Card>
                       <Card className="p-5 bg-white/5 border-white/10">
                         <div className="flex items-center gap-3 mb-2">
                           <Users className="w-6 h-6 text-yellow-400" />
-                          <span className="text-sm text-gray-400">Total Learners</span>
+                          <span className="text-sm text-gray-400">Peserta Aktif</span>
                         </div>
                         <p className="text-3xl font-bold text-white">{totalEnrollments}</p>
-                        <p className="text-xs text-gray-500 mt-1">{completionRate} completions</p>
+                        <p className="text-xs text-gray-500 mt-1">{completionRate} penyelesaian</p>
                       </Card>
                       <Card className="p-5 bg-white/5 border-white/10">
                         <div className="flex items-center gap-3 mb-2">
                           <Clock className="w-6 h-6 text-purple-400" />
-                          <span className="text-sm text-gray-400">Total Duration</span>
+                          <span className="text-sm text-gray-400">Durasi Praktik</span>
                         </div>
                         <p className="text-3xl font-bold text-white">{Math.floor(totalDuration / 60)}</p>
-                        <p className="text-xs text-gray-500 mt-1">minutes of content</p>
+                        <p className="text-xs text-gray-500 mt-1">menit latihan</p>
                       </Card>
                     </div>
 
                     <Card className="p-6 bg-white/5 border-white/10">
                       <div className="flex items-center gap-2 mb-4">
                         <BarChart3 className="w-5 h-5 text-blue-400" />
-                        <h3 className="text-lg font-semibold text-white">Course Performance</h3>
+                        <h3 className="text-lg font-semibold text-white">Dampak Misi</h3>
                       </div>
                       {courses.length === 0 ? (
                         <div className="text-center py-8">
                           <Target className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                          <p className="text-gray-400">No courses yet. Create your first course to see performance data.</p>
+                          <p className="text-gray-400">Belum ada misi. Buat misi pertama untuk melihat data penerapan tim.</p>
                           <Button onClick={() => setActiveTab("create")} className="mt-3" size="sm">
-                            Create Course
+                            Buat Misi
                           </Button>
                         </div>
                       ) : (
@@ -687,12 +809,12 @@ export default function MicroLearning() {
                           <table className="w-full">
                             <thead>
                               <tr className="border-b border-white/10">
-                                <th className="text-left py-3 px-2 text-sm text-gray-400 font-medium">Course</th>
-                                <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Modules</th>
-                                <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Learners</th>
-                                <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Duration</th>
+                                <th className="text-left py-3 px-2 text-sm text-gray-400 font-medium">Misi</th>
+                                <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Langkah</th>
+                                <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Peserta</th>
+                                <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Durasi</th>
                                 <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Status</th>
-                                <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Completion</th>
+                                <th className="text-center py-3 px-2 text-sm text-gray-400 font-medium">Penyelesaian</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -711,7 +833,7 @@ export default function MicroLearning() {
                                     <td className="text-center py-3 px-2 text-sm text-gray-300">{Math.floor((course.total_duration_seconds || 0) / 60)}m</td>
                                     <td className="text-center py-3 px-2">
                                       <Badge className={course.is_published ? "bg-green-500/20 text-green-400" : "bg-gray-500/20 text-gray-400"}>
-                                        {course.is_published ? "Published" : "Draft"}
+                                        {course.is_published ? "Dibagikan" : "Draft"}
                                       </Badge>
                                     </td>
                                     <td className="text-center py-3 px-2">
@@ -732,7 +854,7 @@ export default function MicroLearning() {
                     <Card className="p-6 bg-white/5 border-white/10">
                       <div className="flex items-center gap-2 mb-4">
                         <Flame className="w-5 h-5 text-orange-400" />
-                        <h3 className="text-lg font-semibold text-white">Learning Activity</h3>
+                        <h3 className="text-lg font-semibold text-white">Kebiasaan Praktik</h3>
                       </div>
                       <div className="grid grid-cols-7 gap-3">
                         {streakData.map((item, idx) => (
@@ -754,8 +876,8 @@ export default function MicroLearning() {
                         <Calendar className="w-4 h-4 text-gray-400" />
                         <span className="text-sm text-gray-400">
                           {totalCourses > 0
-                            ? `Active streak: ${Math.min(totalCourses + 2, 7)} days`
-                            : "Start creating courses to build your streak!"}
+                            ? `Streak praktik: ${Math.min(totalCourses + 2, 7)} hari`
+                            : "Buat misi pertama untuk mulai membangun kebiasaan praktik!"}
                         </span>
                       </div>
                     </Card>

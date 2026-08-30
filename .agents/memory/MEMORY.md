@@ -1,1 +1,2 @@
 - [Reproducible npm lockfiles](npm-lockfile-reproducibility.md) — validate dependency moves with a clean production install; an existing hoisted tree can hide lockfile inconsistencies.
+- [Workplace Coach positioning](workplace-coach-positioning.md) — microlearning is cross-industry; construction is the first domain pack, not the product boundary.
