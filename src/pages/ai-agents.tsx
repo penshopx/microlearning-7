@@ -476,7 +476,8 @@ export default function AIAgentsPage() {
   const [eventStreamEvents, setEventStreamEvents] = useState<string[]>([]);
   const [eventStreamIdx, setEventStreamIdx] = useState(0);
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const eventTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -486,9 +487,26 @@ export default function AIAgentsPage() {
     setMemoryLoaded(true);
   }, []);
 
+  const scrollMessagesToBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+  }, []);
+
+  const handleMessagesScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom <= 64;
+  }, []);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading, eventStreamIdx]);
+    if (!shouldAutoScrollRef.current) return;
+
+    const frameId = requestAnimationFrame(scrollMessagesToBottom);
+    return () => cancelAnimationFrame(frameId);
+  }, [messages, loading, eventStreamIdx, scrollMessagesToBottom]);
 
   const historyForApi: HistoryItem[] = useMemo(() =>
     messages
@@ -571,6 +589,9 @@ export default function AIAgentsPage() {
     setLoading(true);
     setShowMentionDropdown(false);
     setSidebarOpen(false);
+    // A newly sent user message should always bring the conversation back
+    // to the latest position, even if the user had been reading older messages.
+    shouldAutoScrollRef.current = true;
 
     const userMsg: AgentMessage = { id: genId(), role: "user", content: raw, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
@@ -1011,7 +1032,11 @@ export default function AIAgentsPage() {
 
             {/* Messages */}
             {hasConversation && (
-              <div className="flex-1 overflow-y-auto px-4 py-6 space-y-5">
+              <div
+                ref={messagesContainerRef}
+                onScroll={handleMessagesScroll}
+                className="flex-1 overflow-y-auto px-4 py-6 space-y-5"
+              >
                 {messages.map(msg => {
                   if (msg.role === "user") {
                     return (
@@ -1132,7 +1157,6 @@ export default function AIAgentsPage() {
                     </div>
                   </div>
                 )}
-                <div ref={bottomRef} />
               </div>
             )}
 
