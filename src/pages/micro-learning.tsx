@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { microLearningService } from "@/services/microLearningService";
+import { DEFAULT_WORKPLACE_TRACK } from "@/lib/workplaceMission";
 import { meetingService } from "@/services/meetingService";
 import {
   Sparkles,
@@ -210,7 +211,7 @@ export default function MicroLearning() {
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
-  const [selectedTrack, setSelectedTrack] = useState("construction");
+  const [selectedTrack, setSelectedTrack] = useState(DEFAULT_WORKPLACE_TRACK);
 
   const categories = [
     { value: "all", label: "Semua" },

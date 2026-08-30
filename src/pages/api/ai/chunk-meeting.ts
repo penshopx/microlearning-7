@@ -4,10 +4,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { getOpenAIErrorResponse } from "@/lib/openai-error";
 import {
+  DEFAULT_WORKPLACE_TRACK,
   WORKPLACE_MISSION_VERSION,
-  normalizeWorkplaceMission,
   type WorkplaceMission,
 } from "@/lib/workplaceMission";
+import {
+  parseGeneratedMissions,
+  type GeneratedMission,
+} from "@/lib/missionGeneration";
 
 const openai = new OpenAI({
   apiKey:
@@ -15,12 +19,6 @@ const openai = new OpenAI({
     process.env.OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
-
-type GeneratedMission = {
-  title: string;
-  durationSeconds: number;
-  mission: WorkplaceMission;
-};
 
 type SourceType = "meeting" | "document";
 
@@ -61,55 +59,6 @@ function stringifySource(value: unknown): string {
   }
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function parseGeneratedMissions(value: unknown, workplaceTrack: string): GeneratedMission[] {
-  const payload = asRecord(value);
-  const rawMissions = payload?.missions;
-  if (!Array.isArray(rawMissions) || rawMissions.length < 1 || rawMissions.length > 5) {
-    throw new Error("AI returned an invalid mission count");
-  }
-
-  return rawMissions.map((item, index) => {
-    const raw = asRecord(item);
-    const title = typeof raw?.title === "string" ? raw.title.trim() : "";
-    const durationSeconds = typeof raw?.durationSeconds === "number"
-      ? Math.max(180, Math.min(1200, Math.round(raw.durationSeconds)))
-      : 480;
-    const mission = normalizeWorkplaceMission({
-      ...raw,
-      kind: "workplace-mission",
-      version: WORKPLACE_MISSION_VERSION,
-      workplaceTrack,
-    });
-
-    if (
-      !title ||
-      !mission ||
-      !mission.objective.statement ||
-      mission.objective.successCriteria.length === 0 ||
-      !mission.scenario.prompt ||
-      mission.scenario.options.length < 2 ||
-      !mission.scenario.recommendedAction ||
-      !mission.scenario.options.includes(mission.scenario.recommendedAction) ||
-      mission.practice.length === 0 ||
-      mission.practice.some((step) => !step.instruction || step.checklist.length === 0) ||
-      mission.evidence.length === 0 ||
-      !mission.feedback.prompt ||
-      mission.feedback.questions.length === 0 ||
-      !mission.repetition.nextAction
-    ) {
-      throw new Error(`AI returned an incomplete mission at index ${index}`);
-    }
-
-    return { title, durationSeconds, mission };
-  });
-}
-
 async function generateMissionsFromSource(
   sourceText: string,
   sourceType: SourceType,
@@ -118,7 +67,8 @@ async function generateMissionsFromSource(
   sourceName?: string,
 ): Promise<GeneratedMission[]> {
   const sourceLabel = sourceType === "meeting" ? "meeting" : "dokumen kerja (misalnya SOP, instruksi kerja, job description, atau kebijakan)";
-  const trackLabel = workplaceTrackLabels[workplaceTrack] || workplaceTrack;
+  const track = workplaceTrack || DEFAULT_WORKPLACE_TRACK;
+  const trackLabel = workplaceTrackLabels[track] || track;
   const sourceHeading = sourceType === "document" && sourceName?.trim()
     ? `Dokumen: ${sourceName.trim().slice(0, 200)}`
     : `Sumber ${sourceType === "meeting" ? "meeting" : "dokumen kerja"}`;
@@ -141,7 +91,7 @@ Kembalikan JSON valid dengan bentuk:
       "successCriteria": ["indikator yang dapat diamati", "indikator kedua"]
     },
     "scenario": {
-      "prompt": "situasi keputusan yang realistis dari meeting",
+      "prompt": "situasi keputusan yang realistis dari sumber",
       "decisionQuestion": "pertanyaan keputusan",
       "options": ["opsi A", "opsi B", "opsi C"],
       "recommendedAction": "harus sama persis dengan salah satu options",
@@ -189,7 +139,7 @@ ${sourceText.slice(0, 30000)}`,
 
   const raw = response.choices[0]?.message?.content;
   if (!raw) throw new Error("AI returned an empty mission response");
-  return parseGeneratedMissions(JSON.parse(raw), workplaceTrack);
+  return parseGeneratedMissions(JSON.parse(raw), track);
 }
 
 export default async function handler(
@@ -203,7 +153,7 @@ export default async function handler(
   try {
     const {
       courseId,
-      workplaceTrack = "custom",
+      workplaceTrack = DEFAULT_WORKPLACE_TRACK,
       sourceType = "meeting",
       sourceText,
       sourceName,
@@ -309,7 +259,9 @@ export default async function handler(
       return res.status(409).json({ error: "Misi untuk course ini sudah pernah dibuat" });
     }
 
-    const track = typeof workplaceTrack === "string" ? workplaceTrack : "custom";
+    const track = typeof workplaceTrack === "string" && workplaceTrack.trim()
+      ? workplaceTrack.trim()
+      : DEFAULT_WORKPLACE_TRACK;
     const generated = await generateMissionsFromSource(
       source,
       sourceType,

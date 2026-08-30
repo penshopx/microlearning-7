@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { fetchAI } from "@/lib/ai-client";
 import {
+  DEFAULT_WORKPLACE_TRACK,
   emptyMissionProgress,
   normalizeMissionProgress,
   normalizeWorkplaceMission,
@@ -79,7 +80,7 @@ export const microLearningService = {
   async chunkSourceIntoModules(
     courseId: string,
     source: MissionSource,
-    workplaceTrack: string = "construction"
+    workplaceTrack: string = DEFAULT_WORKPLACE_TRACK
   ) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -121,7 +122,7 @@ export const microLearningService = {
   async chunkMeetingIntoModules(
     courseId: string,
     meetingRecordingUrl: string,
-    workplaceTrack: string = "construction"
+    workplaceTrack: string = DEFAULT_WORKPLACE_TRACK
   ) {
     return this.chunkSourceIntoModules(
       courseId,

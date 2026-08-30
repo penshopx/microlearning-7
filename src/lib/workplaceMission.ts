@@ -5,6 +5,7 @@
  * file also owns the safe migration boundary for older, flat blueprints.
  */
 export const WORKPLACE_MISSION_VERSION = 2;
+export const DEFAULT_WORKPLACE_TRACK = "construction";
 
 export type MissionObjective = {
   statement: string;
