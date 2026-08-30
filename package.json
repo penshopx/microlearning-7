@@ -8,6 +8,7 @@
     "prebuild": "npm run audit",
     "start": "next start -p 5000 -H 0.0.0.0",
     "lint": "next lint",
+    "test": "vitest run",
     "audit": "npm audit --audit-level=high",
     "postinstall": "npm run audit"
   },
@@ -74,6 +75,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
+    "vitest": "^4.1.11",
     "zod": "^3.25.76",
     "zod-validation-error": "^5.0.0"
   },
