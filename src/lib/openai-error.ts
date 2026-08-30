@@ -17,7 +17,12 @@ export interface OpenAIErrorInfo {
   /** Ready-to-display Indonesian message for the end user */
   userMessage: string;
   /** Machine-readable code */
-  code: typeof AI_API_KEY_ERROR_CODE | "insufficient_quota" | "rate_limit_exceeded" | "other";
+  code:
+    | typeof AI_API_KEY_ERROR_CODE
+    | "insufficient_quota"
+    | "rate_limit_exceeded"
+    | "service_unavailable"
+    | "other";
 }
 
 export interface OpenAIErrorResponse {
@@ -34,7 +39,10 @@ export function getOpenAIErrorResponse(err: unknown): OpenAIErrorResponse | null
   if (!info.isAIUnavailable) return null;
 
   return {
-    status: info.isApiKeyError ? 503 : 429,
+    status:
+      info.isApiKeyError || info.code === "service_unavailable"
+        ? 503
+        : 429,
     body: {
       error: info.userMessage,
       code: info.code,
@@ -95,6 +103,18 @@ export function classifyOpenAIError(err: unknown): OpenAIErrorInfo {
       userMessage:
         "Terlalu banyak permintaan AI dalam waktu singkat. Silakan tunggu beberapa saat lalu coba lagi.",
       code: "rate_limit_exceeded",
+    };
+  }
+
+  if (status === 500 || status === 502 || status === 503) {
+    return {
+      isApiKeyError: false,
+      isQuotaError: false,
+      isRateLimitError: false,
+      isAIUnavailable: true,
+      userMessage:
+        "Layanan AI sedang mengalami gangguan sementara. Silakan coba lagi dalam beberapa saat.",
+      code: "service_unavailable",
     };
   }
 
