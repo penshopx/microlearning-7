@@ -667,6 +667,7 @@ export type Database = {
           created_at: string | null
           id: string
           last_position_seconds: number | null
+          mission_progress: Json
           module_id: string | null
           progress_percentage: number | null
           quiz_attempts: number | null
@@ -682,6 +683,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           last_position_seconds?: number | null
+          mission_progress?: Json
           module_id?: string | null
           progress_percentage?: number | null
           quiz_attempts?: number | null
@@ -697,6 +699,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           last_position_seconds?: number | null
+          mission_progress?: Json
           module_id?: string | null
           progress_percentage?: number | null
           quiz_attempts?: number | null
@@ -1640,6 +1643,19 @@ export type Database = {
         Returns: undefined
       }
       increment_downloads: { Args: { content_id: string }; Returns: undefined }
+      upsert_learner_progress_atomic: {
+        Args: {
+          p_course_id: string
+          p_last_position_seconds?: number | null
+          p_mission_progress?: Json | null
+          p_module_id: string
+          p_progress_percentage?: number | null
+          p_quiz_score?: number | null
+          p_status: string
+          p_time_spent_seconds?: number | null
+        }
+        Returns: Database["public"]["Tables"]["learner_progress"]["Row"]
+      }
     }
     Enums: {
       [_ in never]: never

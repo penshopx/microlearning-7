@@ -299,8 +299,8 @@ export default function MicroLearning() {
       if (courseError || !course) throw courseError;
 
       toast({
-        title: "Course Created! 🎉",
-        description: "Now chunking meeting into micro-modules...",
+        title: "Misi disiapkan",
+        description: "AI sedang menyusun langkah praktik dari isi meeting...",
       });
 
       // Step 2: Chunk meeting into modules
@@ -316,8 +316,8 @@ export default function MicroLearning() {
       if (chunkError) throw chunkError;
 
       toast({
-        title: "Success! ✨",
-        description: `Created ${modules?.modulesCreated || 8} micro-learning modules!`,
+        title: "Misi siap dipraktikkan",
+        description: `${modules?.modulesCreated || 0} langkah kerja berhasil dibuat.`,
       });
 
       // Refresh data

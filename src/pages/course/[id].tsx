@@ -1,198 +1,306 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
-import { useRouter } from "next/router";
 import Link from "next/link";
+import { useRouter } from "next/router";
+import {
+  ArrowLeft,
+  CalendarClock,
+  Camera,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  ClipboardCheck,
+  Clock3,
+  FileCheck2,
+  Lightbulb,
+  MessageSquareText,
+  Play,
+  Repeat2,
+  Target,
+} from "lucide-react";
 import { SEO } from "@/components/SEO";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Play, Pause, SkipForward, SkipBack, Volume2, VolumeX,
-  CheckCircle, Circle, Lock, ChevronRight, Award,
-  Download, Share2, Clock, BookOpen, Trophy, Zap,
-  Camera, ClipboardCheck, MessageSquareText, Repeat2
-} from "lucide-react";
-import { microLearningService } from "@/services/microLearningService";
+import { Textarea } from "@/components/ui/textarea";
 import type { Database } from "@/integrations/supabase/types";
-
-type Course = Database["public"]["Tables"]["courses"]["Row"] & {
-  modules?: Module[];
-};
-
-type Module = Database["public"]["Tables"]["course_modules"]["Row"] & {
-  content?: ModuleContent[];
-  quizzes?: ModuleQuiz[];
-};
+import {
+  emptyMissionProgress,
+  microLearningService,
+  normalizeMissionProgress,
+  normalizeWorkplaceMission,
+  type MissionProgress,
+  type WorkplaceMission,
+} from "@/services/microLearningService";
 
 type ModuleContent = Database["public"]["Tables"]["module_content"]["Row"];
 type ModuleQuiz = Database["public"]["Tables"]["module_quizzes"]["Row"];
 type LearnerProgress = Database["public"]["Tables"]["learner_progress"]["Row"];
-
-type MissionBlueprint = {
-  kind?: string;
-  objective?: string;
-  learn?: string[];
-  practice?: string[];
-  evidence?: string[];
-  scenario?: string;
-  feedbackPrompt?: string;
-  repeatAfterDays?: number;
+type Module = Database["public"]["Tables"]["course_modules"]["Row"] & {
+  content?: ModuleContent[];
+  quizzes?: ModuleQuiz[];
 };
+type Course = Database["public"]["Tables"]["courses"]["Row"] & {
+  modules?: Module[];
+};
+
+function getQuizOptions(options: ModuleQuiz["options"]): string[] {
+  return Array.isArray(options)
+    ? options.filter((option): option is string => typeof option === "string")
+    : [];
+}
+
+function mergeProgress(
+  progress: LearnerProgress[],
+  updated: LearnerProgress
+): LearnerProgress[] {
+  const index = progress.findIndex((item) => item.module_id === updated.module_id);
+  if (index === -1) return [...progress, updated];
+  return progress.map((item, itemIndex) => itemIndex === index ? updated : item);
+}
 
 export default function CoursePage() {
   const router = useRouter();
-  const { id } = router.query;
-  const courseId = typeof id === "string" ? id : "";
-
+  const courseId = typeof router.query.id === "string" ? router.query.id : "";
   const [course, setCourse] = useState<Course | null>(null);
-  const [currentModuleIndex, setCurrentModuleIndex] = useState(0);
   const [progress, setProgress] = useState<LearnerProgress[]>([]);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [showQuiz, setShowQuiz] = useState(false);
-  const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
-  const [quizSubmitted, setQuizSubmitted] = useState(false);
-  const [achievements, setAchievements] = useState<string[]>([]);
-  const [evidenceConfirmed, setEvidenceConfirmed] = useState(false);
+  const [currentModuleIndex, setCurrentModuleIndex] = useState(0);
+  const [missionProgress, setMissionProgress] = useState<MissionProgress>(emptyMissionProgress);
+  const [legacyAnswers, setLegacyAnswers] = useState<Record<string, string>>({});
+  const [legacySubmitted, setLegacySubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [completionMessage, setCompletionMessage] = useState("");
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const saveSequenceRef = useRef(0);
+  const finalizingRef = useRef(false);
 
   useEffect(() => {
-    if (courseId) {
-      loadCourse();
-      loadProgress();
-    }
-  }, [courseId]);
+    if (!courseId) return;
 
-  const loadCourse = async () => {
+    let active = true;
     setLoading(true);
-    const result = await microLearningService.getCourseWithModules(courseId);
-    if (result.data) {
-      setCourse(result.data);
-    }
-    setLoading(false);
-  };
-
-  const loadProgress = async () => {
-    const result = await microLearningService.getLearnerProgress(courseId);
-    if (result.data) {
-      setProgress(result.data);
-    }
-  };
-
-  const currentModule = course?.modules?.[currentModuleIndex];
-  const missionBlueprint = currentModule?.content?.find(
-    (item) =>
-      item.content_type === "worksheet" &&
-      (item.content_data as { kind?: string } | null)?.kind === "workplace-mission"
-  )?.content_data as MissionBlueprint | undefined;
-  const moduleProgress = progress.find((p) => p.module_id === currentModule?.id);
-  const completedModules = progress.filter((p) => p.status === "completed").length;
-  const totalModules = course?.modules?.length || 0;
-  const overallProgress = totalModules > 0 ? (completedModules / totalModules) * 100 : 0;
-
-  const handleModuleComplete = async () => {
-    if (!currentModule) return;
-
-    await microLearningService.updateProgress(courseId, currentModule.id, {
-      status: "completed",
-      progressPercentage: 100,
+    Promise.all([
+      microLearningService.getCourseWithModules(courseId),
+      microLearningService.getLearnerProgress(courseId),
+    ]).then(([courseResult, progressResult]) => {
+      if (!active) return;
+      if (courseResult.data) setCourse(courseResult.data);
+      if (progressResult.data) setProgress(progressResult.data);
+      setLoading(false);
     });
 
-    // Check for achievements
-    const newCompletedCount = completedModules + 1;
-    const newAchievements = [];
+    return () => {
+      active = false;
+    };
+  }, [courseId]);
 
-    if (newCompletedCount === 1) {
-      newAchievements.push("First Steps");
-      await microLearningService.awardAchievement(
-        "first_module",
-        "First Steps",
-        "Completed your first module",
-        10
-      );
+  const currentModule = course?.modules?.[currentModuleIndex];
+  const moduleProgress = progress.find((item) => item.module_id === currentModule?.id);
+  const mission = useMemo<WorkplaceMission | null>(() => {
+    const missionContent = currentModule?.content?.find((item) => {
+      const value = item.content_data as { kind?: unknown } | null;
+      return item.content_type === "worksheet" && value?.kind === "workplace-mission";
+    });
+    return normalizeWorkplaceMission(missionContent?.content_data);
+  }, [currentModule]);
+
+  useEffect(() => {
+    setMissionProgress(normalizeMissionProgress(moduleProgress?.mission_progress));
+    setLegacyAnswers({});
+    setLegacySubmitted(false);
+    setCompletionMessage("");
+    setErrorMessage("");
+    setFinalizing(false);
+    finalizingRef.current = false;
+  }, [currentModule?.id]);
+
+  const completedModules = progress.filter((item) => item.status === "completed").length;
+  const totalModules = course?.modules?.length || 0;
+  const overallProgress = totalModules ? (completedModules / totalModules) * 100 : 0;
+
+  const practiceChecks = useMemo(() => {
+    if (!mission) return [];
+    return mission.practice.flatMap((step) => {
+      if (!step.checklist.length) {
+        return [{ id: step.id, label: step.instruction }];
+      }
+      return step.checklist.map((label, index) => ({
+        id: `${step.id}:${index + 1}`,
+        label,
+      }));
+    });
+  }, [mission]);
+
+  const scenarioOptions = useMemo(() => {
+    if (!mission) return [];
+    if (mission.scenario.options.length) return mission.scenario.options;
+    return getQuizOptions(currentModule?.quizzes?.[0]?.options ?? null);
+  }, [currentModule?.quizzes, mission]);
+
+  const requiredEvidence = mission?.evidence.filter((item) => item.required).length || 0;
+  const missionLocked = moduleProgress?.status === "completed" || finalizing;
+  const practiceComplete = practiceChecks.length > 0 &&
+    practiceChecks.every((item) => missionProgress.checkedPracticeIds.includes(item.id));
+  const decisionComplete = scenarioOptions.length === 0 || Boolean(missionProgress.selectedDecision);
+  const reflectionComplete = missionProgress.feedback.trim().length >= 10;
+  const canCompleteMission = Boolean(
+    mission &&
+    practiceComplete &&
+    decisionComplete &&
+    (requiredEvidence === 0 || missionProgress.evidenceConfirmed) &&
+    reflectionComplete
+  );
+
+  const persistMissionProgress = (
+    next: MissionProgress,
+    status: "in_progress" | "completed" = "in_progress"
+  ): Promise<boolean> => {
+    if (!currentModule) return Promise.resolve(false);
+    if ((moduleProgress?.status === "completed" || finalizingRef.current) && status !== "completed") {
+      return Promise.resolve(false);
     }
+    const moduleId = currentModule.id;
+    const sequence = ++saveSequenceRef.current;
+    setSaving(true);
+    setErrorMessage("");
 
-    if (newCompletedCount === 5) {
-      newAchievements.push("Quick Learner");
-      await microLearningService.awardAchievement(
-        "five_modules",
-        "Quick Learner",
-        "Completed 5 modules",
-        50
-      );
-    }
+    const operation = saveQueueRef.current.then(async () => {
+      const nextPracticeComplete = practiceChecks.length > 0 &&
+        practiceChecks.every((item) => next.checkedPracticeIds.includes(item.id));
+      const nextDecisionComplete = scenarioOptions.length === 0 || Boolean(next.selectedDecision);
+      const completedPieces = [
+        nextPracticeComplete,
+        nextDecisionComplete,
+        requiredEvidence === 0 || next.evidenceConfirmed,
+        next.feedback.trim().length >= 10,
+      ].filter(Boolean).length;
 
-    if (newCompletedCount === totalModules) {
-      newAchievements.push("Course Master");
-      await microLearningService.awardAchievement(
-        "course_complete",
-        "Course Master",
-        `Completed ${course?.title}`,
-        100
-      );
-    }
+      const result = await microLearningService.updateProgress(courseId, moduleId, {
+        status,
+        progressPercentage: status === "completed" ? 100 : completedPieces * 25,
+        missionProgress: next,
+      });
 
-    if (newAchievements.length > 0) {
-      setAchievements([...achievements, ...newAchievements]);
-    }
+      if (result.error || !result.data) {
+        setErrorMessage("Perubahan belum tersimpan. Coba lagi sebelum menutup halaman.");
+        return false;
+      }
 
-    loadProgress();
+      setProgress((current) => mergeProgress(current, result.data));
+      return true;
+    }).finally(() => {
+      if (sequence === saveSequenceRef.current) setSaving(false);
+    });
+
+    saveQueueRef.current = operation.then(() => undefined, () => undefined);
+    return operation;
   };
 
-  const handleNextModule = () => {
-    if (currentModuleIndex < totalModules - 1) {
-      setCurrentModuleIndex(currentModuleIndex + 1);
-      setShowQuiz(false);
-      setQuizSubmitted(false);
-      setQuizAnswers({});
-      setEvidenceConfirmed(false);
+  const togglePracticeCheck = (checkId: string) => {
+    if (finalizingRef.current || moduleProgress?.status === "completed") return;
+    setMissionProgress((current) => {
+      const checked = current.checkedPracticeIds.includes(checkId);
+      const next = {
+        ...current,
+        checkedPracticeIds: checked
+          ? current.checkedPracticeIds.filter((id) => id !== checkId)
+          : [...current.checkedPracticeIds, checkId],
+      };
+      void persistMissionProgress(next);
+      return next;
+    });
+  };
+
+  const chooseDecision = (option: string) => {
+    if (finalizingRef.current || moduleProgress?.status === "completed") return;
+    setMissionProgress((current) => {
+      const next = { ...current, selectedDecision: option };
+      void persistMissionProgress(next);
+      return next;
+    });
+  };
+
+  const confirmEvidence = () => {
+    if (finalizingRef.current || moduleProgress?.status === "completed") return;
+    setMissionProgress((current) => {
+      const next = {
+        ...current,
+        evidenceConfirmed: !current.evidenceConfirmed,
+      };
+      void persistMissionProgress(next);
+      return next;
+    });
+  };
+
+  const completeMission = async () => {
+    if (!canCompleteMission) return;
+    finalizingRef.current = true;
+    setFinalizing(true);
+    const saved = await persistMissionProgress(missionProgress, "completed");
+    if (saved) {
+      setCompletionMessage("Misi selesai. Bawa perbaikanmu ke pengulangan berikutnya.");
+    } else {
+      finalizingRef.current = false;
+      setFinalizing(false);
     }
   };
 
-  const handlePreviousModule = () => {
-    if (currentModuleIndex > 0) {
-      setCurrentModuleIndex(currentModuleIndex - 1);
-      setShowQuiz(false);
-      setQuizSubmitted(false);
-      setQuizAnswers({});
-      setEvidenceConfirmed(false);
+  const submitLegacyScenario = async () => {
+    if (!currentModule) return;
+    if (!currentModule.quizzes?.length) {
+      const result = await microLearningService.updateProgress(courseId, currentModule.id, {
+        status: "completed",
+        progressPercentage: 100,
+      });
+      if (result.data) {
+        setProgress((current) => mergeProgress(current, result.data));
+        setCompletionMessage("Langkah lama selesai dan progresmu sudah tersimpan.");
+      }
+      return;
     }
-  };
-
-  const handleQuizSubmit = () => {
-    setQuizSubmitted(true);
-    
-    const quizzes = currentModule?.quizzes || [];
-    const correctCount = quizzes.filter((q, idx) => 
-      quizAnswers[idx] === q.correct_answer
+    setLegacySubmitted(true);
+    const correct = currentModule.quizzes.filter(
+      (quiz) => legacyAnswers[quiz.id] === quiz.correct_answer
     ).length;
-    const score = (correctCount / quizzes.length) * 100;
+    const score = Math.round((correct / currentModule.quizzes.length) * 100);
+    if (score < 70) return;
 
-    if (score >= 70 && !missionBlueprint) {
-      handleModuleComplete();
+    const result = await microLearningService.updateProgress(courseId, currentModule.id, {
+      status: "completed",
+      progressPercentage: 100,
+      quizScore: score,
+    });
+    if (result.data) {
+      setProgress((current) => mergeProgress(current, result.data));
+      setCompletionMessage("Langkah lama selesai dan progresmu sudah tersimpan.");
     }
   };
 
-  const getModuleStatus = (moduleId: string) => {
-    const prog = progress.find((p) => p.module_id === moduleId);
-    return prog?.status || "not_started";
+  const selectModule = (index: number) => {
+    setCurrentModuleIndex(index);
+    setMissionProgress(emptyMissionProgress());
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center">
-        <div className="text-white text-xl">Memuat misi...</div>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-white text-lg">Menyiapkan misi kerja...</div>
       </div>
     );
   }
 
   if (!course) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-6">
         <div className="text-center">
-          <h1 className="text-white text-2xl mb-4">Misi tidak ditemukan</h1>
+          <h1 className="text-white text-2xl font-bold mb-3">Misi tidak ditemukan</h1>
+          <p className="text-slate-400 mb-6">Misi mungkin sudah dipindahkan atau tidak dapat kamu akses.</p>
           <Link href="/micro-learning">
             <Button>Kembali ke Workplace Coach</Button>
           </Link>
@@ -204,442 +312,456 @@ export default function CoursePage() {
   return (
     <>
       <Head>
-        <title>{course.title} - Chaesa Live Micro-Learning</title>
+        <title>{course.title} - Workplace Coach</title>
       </Head>
       <SEO
         title={course.title || "Workplace Mission"}
-        description={course.description || "Praktikkan skill kerja bersama Chaesa Live"}
+        description={course.description || "Praktikkan skill kerja bersama Workplace Coach"}
       />
 
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900">
-        {/* Achievement Popup */}
-        {achievements.length > 0 && (
-          <div className="fixed top-20 right-4 z-50 space-y-2">
-            {achievements.map((achievement, idx) => (
-              <Card key={idx} className="p-4 bg-gradient-to-r from-yellow-500 to-orange-500 text-white animate-slide-in-right">
-                <div className="flex items-center gap-3">
-                  <Trophy className="w-6 h-6" />
-                  <div>
-                    <div className="font-bold">Achievement Unlocked!</div>
-                    <div className="text-sm">{achievement}</div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* Header */}
-        <div className="bg-black/30 backdrop-blur-sm border-b border-white/10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Link href="/micro-learning">
-                  <Button variant="ghost" className="text-white hover:bg-white/10">
-                     ← Kembali ke Misi
-                  </Button>
-                </Link>
-                <div>
-                  <h1 className="text-xl font-bold text-white">{course.title}</h1>
-                  <div className="flex items-center gap-4 mt-1 text-sm text-gray-400">
-                    <div className="flex items-center gap-1">
-                      <BookOpen className="w-4 h-4" />
-                       {completedModules}/{totalModules} langkah
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" />
-                      {Math.floor((course.total_duration_seconds || 0) / 60)} min total
-                    </div>
-                  </div>
-                </div>
+      <main className="min-h-screen bg-slate-950 text-white">
+        <header className="border-b border-white/10 bg-black/40">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
+            <Link
+              href="/micro-learning"
+              className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Kembali ke daftar misi
+            </Link>
+            <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <Badge className="bg-blue-500/20 text-blue-200 border border-blue-400/30">
+                  Workplace mission
+                </Badge>
+                <h1 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight">{course.title}</h1>
+                <p className="mt-2 max-w-2xl text-slate-300">{course.description}</p>
               </div>
-
-              <div className="flex items-center gap-2">
-                <Button variant="outline" className="text-white border-white/20">
-                  <Share2 className="w-4 h-4 mr-2" />
-                   Bagikan
-                </Button>
-                <Button variant="outline" className="text-white border-white/20">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download Materials
-                </Button>
+              <div className="min-w-64 rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="flex justify-between text-sm text-slate-300">
+                  <span>Progres misi</span>
+                  <span>{completedModules}/{totalModules} langkah</span>
+                </div>
+                <Progress value={overallProgress} className="mt-3 h-2" />
               </div>
             </div>
-
-            {/* Progress Bar */}
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-sm text-gray-400 mb-2">
-               <span>Progres Misi</span>
-                <span>{Math.round(overallProgress)}%</span>
-              </div>
-              <Progress value={overallProgress} className="h-2" />
-            </div>
           </div>
-        </div>
+        </header>
 
-        {/* Main Content */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Video Player & Content */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Video Player */}
-              <Card className="bg-black/40 backdrop-blur-sm border-white/10 overflow-hidden">
-                <div className="aspect-video bg-black relative group">
-                  {currentModule?.video_url ? (
-                    <video
-                      className="w-full h-full"
-                      controls
-                      src={currentModule.video_url}
-                      poster={currentModule.thumbnail_url || undefined}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-gray-500">
-                      <Play className="w-20 h-20" />
-                    </div>
-                  )}
-                </div>
-
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-8">
+            <div className="space-y-6">
+              <Card className="overflow-hidden border-white/10 bg-slate-900">
+                {currentModule?.video_url ? (
+                  <video
+                    className="w-full aspect-video bg-black"
+                    controls
+                    src={currentModule.video_url}
+                    poster={currentModule.thumbnail_url || undefined}
+                  />
+                ) : (
+                  <div className="aspect-video bg-black flex items-center justify-center text-slate-600">
+                    <Play className="w-16 h-16" />
+                  </div>
+                )}
                 <div className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm text-gray-400 mb-1">
-                         Langkah {currentModuleIndex + 1} dari {totalModules}
-                      </div>
-                      <h2 className="text-2xl font-bold text-white">
-                        {currentModule?.title}
-                      </h2>
+                      <p className="text-sm text-blue-300">
+                        Langkah {currentModuleIndex + 1} dari {totalModules}
+                      </p>
+                      <h2 className="mt-1 text-2xl font-bold">{currentModule?.title}</h2>
                     </div>
                     {moduleProgress?.status === "completed" && (
-                      <Badge className="bg-green-500">
-                        <CheckCircle className="w-4 h-4 mr-1" />
-                         Selesai
+                      <Badge className="bg-emerald-500 text-slate-950">
+                        <CheckCircle2 className="w-4 h-4 mr-1" />
+                        Selesai
                       </Badge>
                     )}
                   </div>
-
-                  <p className="text-gray-300 mb-6">
-                    {currentModule?.description}
-                  </p>
-
-                  {/* Navigation */}
-                  <div className="flex items-center justify-between">
-                    <Button
-                      variant="outline"
-                      onClick={handlePreviousModule}
-                      disabled={currentModuleIndex === 0}
-                      className="text-white border-white/20"
-                    >
-                      <SkipBack className="w-4 h-4 mr-2" />
-                       Sebelumnya
-                    </Button>
-
-                    {!showQuiz && currentModule?.quizzes && currentModule.quizzes.length > 0 && (
-                      <Button
-                        onClick={() => setShowQuiz(true)}
-                        className="bg-gradient-to-r from-purple-600 to-pink-600"
-                      >
-                        <Zap className="w-4 h-4 mr-2" />
-                         Jawab Skenario
-                      </Button>
-                    )}
-
-                    <Button
-                      variant="outline"
-                      onClick={handleNextModule}
-                      disabled={currentModuleIndex === totalModules - 1}
-                      className="text-white border-white/20"
-                    >
-                       Berikutnya
-                      <SkipForward className="w-4 h-4 ml-2" />
-                    </Button>
-                  </div>
+                  <p className="mt-3 text-slate-300">{currentModule?.description}</p>
                 </div>
               </Card>
 
-              {missionBlueprint && (
-                <Card className="bg-blue-950/50 backdrop-blur-sm border-blue-400/20 p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">Misi Praktik</p>
-                      <h3 className="mt-2 text-xl font-bold text-white">{missionBlueprint.objective}</h3>
+              {mission ? (
+                <>
+                  <Card className="border-blue-400/25 bg-blue-950/40 p-6">
+                    <div className="flex gap-4">
+                      <div className="rounded-xl bg-blue-400/15 p-3 h-fit">
+                        <Target className="w-6 h-6 text-blue-300" />
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-blue-300 font-semibold">
+                          Tujuan kerja
+                        </p>
+                        <h3 className="mt-2 text-xl font-bold">{mission.objective.statement}</h3>
+                        {mission.objective.successCriteria.length > 0 && (
+                          <ul className="mt-4 space-y-2 text-sm text-slate-300">
+                            {mission.objective.successCriteria.map((criterion) => (
+                              <li key={criterion} className="flex gap-2">
+                                <Check className="w-4 h-4 mt-0.5 text-blue-300 shrink-0" />
+                                {criterion}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     </div>
-                    <ClipboardCheck className="w-7 h-7 text-blue-300 shrink-0" />
-                  </div>
+                  </Card>
 
-                  <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                      <MessageSquareText className="w-5 h-5 text-blue-300 mb-3" />
-                      <h4 className="font-semibold text-white mb-2">Pelajari</h4>
-                      <ul className="space-y-2 text-sm text-slate-300">
-                        {(missionBlueprint.learn || []).map((item) => <li key={item}>• {item}</li>)}
-                      </ul>
+                  <Card className="border-white/10 bg-slate-900 p-6">
+                    <div className="flex items-center gap-3">
+                      <MessageSquareText className="w-6 h-6 text-amber-300" />
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-amber-300 font-semibold">
+                          1. Ambil keputusan
+                        </p>
+                        <h3 className="text-xl font-bold">Hadapi skenario kerja</h3>
+                      </div>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                      <ClipboardCheck className="w-5 h-5 text-amber-300 mb-3" />
-                      <h4 className="font-semibold text-white mb-2">Praktikkan</h4>
-                      <ul className="space-y-2 text-sm text-slate-300">
-                        {(missionBlueprint.practice || []).map((item) => <li key={item}>• {item}</li>)}
-                      </ul>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                      <Camera className="w-5 h-5 text-emerald-300 mb-3" />
-                      <h4 className="font-semibold text-white mb-2">Siapkan Bukti</h4>
-                      <ul className="space-y-2 text-sm text-slate-300">
-                        {(missionBlueprint.evidence || []).map((item) => <li key={item}>• {item}</li>)}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-blue-400/20 bg-blue-400/10 p-4">
-                    <div>
-                      <p className="text-sm text-blue-100">{missionBlueprint.feedbackPrompt}</p>
-                      <p className="mt-1 flex items-center gap-1.5 text-xs text-blue-300">
-                        <Repeat2 className="w-3.5 h-3.5" />
-                        Ulangi skill ini dalam {missionBlueprint.repeatAfterDays || 3} hari
-                      </p>
-                    </div>
-                    <Button
-                      onClick={() => {
-                        setEvidenceConfirmed(true);
-                        handleModuleComplete();
-                      }}
-                      disabled={evidenceConfirmed || moduleProgress?.status === "completed"}
-                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold"
-                    >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      {evidenceConfirmed || moduleProgress?.status === "completed"
-                        ? "Bukti dikonfirmasi"
-                        : "Saya sudah menyiapkan bukti"}
-                    </Button>
-                  </div>
-                </Card>
-              )}
-
-              {/* Quiz Section */}
-              {showQuiz && currentModule?.quizzes && (
-                <Card className="bg-black/40 backdrop-blur-sm border-white/10 p-6">
-                  <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                    <Zap className="w-6 h-6 text-yellow-500" />
-                    Skenario Keputusan
-                  </h3>
-
-                  <div className="space-y-6">
-                    {currentModule.quizzes.map((quiz, idx) => {
-                      const options = Array.isArray(quiz.options)
-                        ? quiz.options.filter((option): option is string => typeof option === "string")
-                        : (quiz.options as { options?: string[] } | null)?.options || [];
-                      const isCorrect = quizSubmitted && quizAnswers[idx] === quiz.correct_answer;
-                      const isWrong = quizSubmitted && quizAnswers[idx] !== quiz.correct_answer;
-
-                      return (
-                        <div key={quiz.id} className="space-y-3">
-                          <div className="text-white font-medium">
-                            {idx + 1}. {quiz.question_text}
-                          </div>
-
-                          <div className="space-y-2">
-                            {options.map((option, optIdx) => (
-                              <button
-                                key={optIdx}
-                                onClick={() => !quizSubmitted && setQuizAnswers({ ...quizAnswers, [idx]: option })}
-                                disabled={quizSubmitted}
-                                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                                  quizAnswers[idx] === option
-                                    ? quizSubmitted
-                                      ? option === quiz.correct_answer
-                                        ? "bg-green-500/20 border-green-500 text-green-300"
-                                        : "bg-red-500/20 border-red-500 text-red-300"
-                                      : "bg-purple-500/20 border-purple-500 text-white"
-                                    : quizSubmitted && option === quiz.correct_answer
-                                    ? "bg-green-500/10 border-green-500/50 text-green-300"
-                                    : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
-                                }`}
-                              >
+                    <p className="mt-5 rounded-xl border border-amber-300/20 bg-amber-300/5 p-4 text-slate-200">
+                      {mission.scenario.prompt}
+                    </p>
+                    <p className="mt-5 font-semibold">{mission.scenario.decisionQuestion}</p>
+                    {scenarioOptions.length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {scenarioOptions.map((option) => {
+                          const selected = missionProgress.selectedDecision === option;
+                          return (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => chooseDecision(option)}
+                              disabled={missionLocked}
+                              className={`w-full rounded-xl border p-4 text-left text-sm transition ${
+                                selected
+                                  ? "border-blue-400 bg-blue-400/15 text-white"
+                                  : "border-white/10 bg-white/5 text-slate-300 hover:border-white/25"
+                              }`}
+                            >
+                              <span className="flex gap-3">
+                                {selected
+                                  ? <CheckCircle2 className="w-5 h-5 text-blue-300 shrink-0" />
+                                  : <Circle className="w-5 h-5 text-slate-500 shrink-0" />}
                                 {option}
-                              </button>
-                            ))}
-                          </div>
-
-                          {quizSubmitted && quiz.explanation && (
-                            <div className={`p-3 rounded-lg ${
-                              isCorrect ? "bg-green-500/10 text-green-300" : "bg-blue-500/10 text-blue-300"
-                            }`}>
-                              <div className="font-medium mb-1">Pembahasan:</div>
-                              <div className="text-sm">{quiz.explanation}</div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {!quizSubmitted && (
-                    <Button
-                      onClick={handleQuizSubmit}
-                      disabled={Object.keys(quizAnswers).length !== currentModule.quizzes.length}
-                      className="w-full mt-6 bg-gradient-to-r from-purple-600 to-pink-600"
-                    >
-                      Periksa Jawaban
-                    </Button>
-                  )}
-
-                  {quizSubmitted && (
-                    <div className="mt-6 p-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg text-center">
-                      <div className="text-white text-lg font-bold mb-2">
-                        Skenario selesai
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="text-gray-300">
-                        Jawaban benar {currentModule.quizzes.filter((q, idx) => quizAnswers[idx] === q.correct_answer).length} dari {currentModule.quizzes.length}
+                    ) : (
+                      <p className="mt-3 text-sm text-slate-400">
+                        Pertimbangkan tindakanmu, lalu lanjutkan ke praktik.
+                      </p>
+                    )}
+                    {missionProgress.selectedDecision && (
+                      <div className="mt-4 rounded-xl border border-blue-400/20 bg-blue-400/10 p-4">
+                        <p className="text-sm font-semibold text-blue-200">Arahan coach</p>
+                        <p className="mt-1 text-sm text-slate-200">{mission.scenario.debrief}</p>
+                        <p className="mt-2 text-xs text-blue-200">
+                          Tindakan yang disarankan: {mission.scenario.recommendedAction}
+                        </p>
                       </div>
-                      <Button
-                        onClick={() => {
-                          setShowQuiz(false);
-                          handleNextModule();
-                        }}
-                        className="mt-4 bg-gradient-to-r from-purple-600 to-pink-600"
-                      >
-                        Lanjut ke Langkah Berikutnya
-                        <ChevronRight className="w-4 h-4 ml-2" />
-                      </Button>
+                    )}
+                  </Card>
+
+                  <Card className="border-white/10 bg-slate-900 p-6">
+                    <div className="flex items-center gap-3">
+                      <ClipboardCheck className="w-6 h-6 text-blue-300" />
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-blue-300 font-semibold">
+                          2. Praktikkan
+                        </p>
+                        <h3 className="text-xl font-bold">Lakukan di pekerjaanmu</h3>
+                      </div>
                     </div>
-                  )}
+                    {mission.knowledge.length > 0 && (
+                      <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">
+                        <p className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                          <Lightbulb className="w-4 h-4 text-amber-300" />
+                          Pegangan singkat
+                        </p>
+                        <ul className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+                          {mission.knowledge.map((item) => <li key={item}>• {item}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    <div className="mt-5 space-y-5">
+                      {mission.practice.map((step, stepIndex) => (
+                        <div key={step.id}>
+                          <div className="flex items-start justify-between gap-4">
+                            <p className="font-semibold">
+                              {stepIndex + 1}. {step.instruction}
+                            </p>
+                            <span className="flex items-center gap-1 text-xs text-slate-400 shrink-0">
+                              <Clock3 className="w-3.5 h-3.5" />
+                              ±{step.estimatedMinutes} menit
+                            </span>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            {(step.checklist.length
+                              ? step.checklist.map((label, index) => ({
+                                id: `${step.id}:${index + 1}`,
+                                label,
+                              }))
+                              : [{ id: step.id, label: step.instruction }]
+                            ).map((checkItem) => {
+                              const checked = missionProgress.checkedPracticeIds.includes(checkItem.id);
+                              return (
+                                <button
+                                  key={checkItem.id}
+                                  type="button"
+                                  onClick={() => togglePracticeCheck(checkItem.id)}
+                                  disabled={missionLocked}
+                                  className="w-full flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left text-sm text-slate-200 hover:border-blue-400/40"
+                                >
+                                  {checked
+                                    ? <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                                    : <Circle className="w-5 h-5 text-slate-500 shrink-0" />}
+                                  <span className={checked ? "line-through text-slate-400" : ""}>
+                                    {checkItem.label}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+
+                  <Card className="border-white/10 bg-slate-900 p-6">
+                    <div className="flex items-center gap-3">
+                      <Camera className="w-6 h-6 text-emerald-300" />
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-emerald-300 font-semibold">
+                          3. Siapkan bukti
+                        </p>
+                        <h3 className="text-xl font-bold">Buat praktikmu dapat ditinjau</h3>
+                      </div>
+                    </div>
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      {mission.evidence.map((evidence) => (
+                        <div key={evidence.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <FileCheck2 className="w-5 h-5 text-emerald-300" />
+                            <Badge variant="outline" className="border-white/15 text-slate-300 capitalize">
+                              {evidence.type}
+                            </Badge>
+                          </div>
+                          <p className="mt-3 font-semibold">{evidence.label}</p>
+                          <p className="mt-1 text-sm text-slate-400">{evidence.instruction}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={confirmEvidence}
+                      disabled={missionLocked}
+                      className={`mt-5 w-full border-white/15 ${
+                        missionProgress.evidenceConfirmed
+                          ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                          : "text-white hover:bg-white/10"
+                      }`}
+                    >
+                      <FileCheck2 className="w-4 h-4 mr-2" />
+                      {missionProgress.evidenceConfirmed
+                        ? "Bukti sudah siap ditinjau"
+                        : "Konfirmasi bukti sudah siap"}
+                    </Button>
+                  </Card>
+
+                  <Card className="border-blue-400/20 bg-blue-950/35 p-6">
+                    <div className="flex items-center gap-3">
+                      <Repeat2 className="w-6 h-6 text-blue-300" />
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-blue-300 font-semibold">
+                          4. Refleksi dan ulangi
+                        </p>
+                        <h3 className="text-xl font-bold">{mission.feedback.prompt}</h3>
+                      </div>
+                    </div>
+                    <ul className="mt-4 space-y-1 text-sm text-slate-300">
+                      {mission.feedback.questions.map((question) => <li key={question}>• {question}</li>)}
+                    </ul>
+                    <Textarea
+                      value={missionProgress.feedback}
+                      onChange={(event) => setMissionProgress({
+                        ...missionProgress,
+                        feedback: event.target.value,
+                      })}
+                      onBlur={() => void persistMissionProgress(missionProgress)}
+                      disabled={missionLocked}
+                      placeholder="Tulis refleksi singkat (minimal 10 karakter)..."
+                      className="mt-4 min-h-28 border-white/15 bg-black/25 text-white placeholder:text-slate-500"
+                    />
+                    <div className="mt-4 flex gap-3 rounded-xl border border-blue-400/20 bg-blue-400/10 p-4">
+                      <CalendarClock className="w-5 h-5 text-blue-300 shrink-0" />
+                      <div>
+                        <p className="font-semibold text-blue-100">{mission.repetition.cadenceLabel}</p>
+                        <p className="mt-1 text-sm text-slate-300">{mission.repetition.nextAction}</p>
+                        <p className="mt-2 text-xs text-blue-200">Tip: {mission.feedback.coachTip}</p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={completeMission}
+                      disabled={!canCompleteMission || saving || moduleProgress?.status === "completed"}
+                      className="mt-5 w-full bg-blue-500 hover:bg-blue-400 text-white font-semibold"
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      {moduleProgress?.status === "completed"
+                        ? "Misi sudah selesai"
+                        : saving
+                          ? "Menyimpan..."
+                          : "Selesaikan misi"}
+                    </Button>
+                    {!canCompleteMission && moduleProgress?.status !== "completed" && (
+                      <p className="mt-3 text-center text-xs text-slate-400">
+                        Selesaikan keputusan, checklist, bukti, dan refleksi untuk menutup misi.
+                      </p>
+                    )}
+                  </Card>
+                </>
+              ) : (
+                <Card className="border-white/10 bg-slate-900 p-6">
+                  <Badge variant="outline" className="border-white/15 text-slate-300">
+                    Format lama
+                  </Badge>
+                  <h3 className="mt-3 text-xl font-bold">Selesaikan langkah ini</h3>
+                  <p className="mt-2 text-slate-300">
+                    Konten lama tetap dapat dijalankan. Jawab skenario untuk mencatat progres.
+                  </p>
+                  {currentModule?.key_points?.length ? (
+                    <ul className="mt-5 space-y-2 text-sm text-slate-300">
+                      {currentModule.key_points.map((point) => <li key={point}>• {point}</li>)}
+                    </ul>
+                  ) : null}
+                  <div className="mt-6 space-y-6">
+                    {currentModule?.quizzes?.map((quiz) => (
+                      <div key={quiz.id}>
+                        <p className="font-semibold">{quiz.question_text}</p>
+                        <div className="mt-3 space-y-2">
+                          {getQuizOptions(quiz.options).map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => setLegacyAnswers((answers) => ({
+                                ...answers,
+                                [quiz.id]: option,
+                              }))}
+                              className={`w-full rounded-xl border p-3 text-left text-sm ${
+                                legacyAnswers[quiz.id] === option
+                                  ? "border-blue-400 bg-blue-400/15"
+                                  : "border-white/10 bg-white/5"
+                              }`}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                        {legacySubmitted && (
+                          <p className={`mt-2 text-sm ${
+                            legacyAnswers[quiz.id] === quiz.correct_answer
+                              ? "text-emerald-300"
+                              : "text-amber-300"
+                          }`}>
+                            {quiz.explanation}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    className="mt-6 w-full bg-blue-500 hover:bg-blue-400"
+                    onClick={submitLegacyScenario}
+                    disabled={moduleProgress?.status === "completed"}
+                  >
+                    {moduleProgress?.status === "completed"
+                      ? "Langkah selesai"
+                      : currentModule?.quizzes?.length
+                        ? "Periksa jawaban"
+                        : "Tandai langkah selesai"}
+                  </Button>
                 </Card>
               )}
 
-              {/* Additional Content */}
-              <Card className="bg-black/40 backdrop-blur-sm border-white/10">
-                <Tabs defaultValue="notes" className="w-full">
-                  <TabsList className="w-full bg-black/40">
-                    <TabsTrigger value="notes" className="flex-1">Notes</TabsTrigger>
-                    <TabsTrigger value="slides" className="flex-1">Slides</TabsTrigger>
-                    <TabsTrigger value="resources" className="flex-1">Resources</TabsTrigger>
-                  </TabsList>
+              {errorMessage && (
+                <p role="alert" className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
+                  {errorMessage}
+                </p>
+              )}
+              {completionMessage && (
+                <p role="status" className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+                  {completionMessage}
+                </p>
+              )}
 
-                  <TabsContent value="notes" className="p-6">
-                    <div className="text-gray-300 space-y-4">
-                      <p>Take notes while watching this module...</p>
-                      <textarea
-                        className="w-full h-32 bg-black/40 border border-white/10 rounded-lg p-3 text-white resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        placeholder="Write your notes here..."
-                      />
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="slides" className="p-6">
-                    <div className="text-gray-300">
-                      {currentModule?.content?.filter(c => c.content_type === "slides").length ? (
-                        <div className="space-y-4">
-                          {currentModule.content
-                            .filter(c => c.content_type === "slides")
-                            .map((content) => (
-                              <a
-                                key={content.id}
-                                href={content.file_url || "#"}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="block p-4 bg-purple-500/10 hover:bg-purple-500/20 rounded-lg border border-purple-500/30 transition-colors"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span>Download Slides (PDF)</span>
-                                  <Download className="w-5 h-5" />
-                                </div>
-                              </a>
-                            ))}
-                        </div>
-                      ) : (
-                        <p>No slides available for this module.</p>
-                      )}
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="resources" className="p-6">
-                    <div className="text-gray-300">
-                      <p>Additional resources and reading materials...</p>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </Card>
+              <div className="flex items-center justify-between gap-4">
+                <Button
+                  variant="outline"
+                  onClick={() => selectModule(currentModuleIndex - 1)}
+                  disabled={currentModuleIndex === 0}
+                  className="border-white/15 text-white hover:bg-white/10"
+                >
+                  <ChevronLeft className="w-4 h-4 mr-2" />
+                  Sebelumnya
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => selectModule(currentModuleIndex + 1)}
+                  disabled={currentModuleIndex >= totalModules - 1}
+                  className="border-white/15 text-white hover:bg-white/10"
+                >
+                  Berikutnya
+                  <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
             </div>
 
-            {/* Sidebar - Module List */}
-            <div className="space-y-6">
-              <Card className="bg-black/40 backdrop-blur-sm border-white/10 p-6">
-                <h3 className="text-lg font-bold text-white mb-4">Course Modules</h3>
-                
-                <div className="space-y-2">
-                  {course.modules?.map((module, idx) => {
-                    const status = getModuleStatus(module.id);
-                    const isActive = idx === currentModuleIndex;
-
+            <aside className="space-y-5">
+              <Card className="border-white/10 bg-slate-900 p-5 lg:sticky lg:top-5">
+                <h2 className="font-bold">Langkah misi</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Pilih langkah yang ingin kamu praktikkan.
+                </p>
+                <div className="mt-4 space-y-2">
+                  {course.modules?.map((module, index) => {
+                    const status = progress.find((item) => item.module_id === module.id)?.status;
+                    const active = index === currentModuleIndex;
                     return (
                       <button
                         key={module.id}
-                        onClick={() => setCurrentModuleIndex(idx)}
-                        className={`w-full text-left p-3 rounded-lg border transition-all ${
-                          isActive
-                            ? "bg-purple-500/20 border-purple-500"
-                            : "bg-white/5 border-white/10 hover:bg-white/10"
+                        type="button"
+                        onClick={() => selectModule(index)}
+                        className={`w-full rounded-xl border p-3 text-left transition ${
+                          active
+                            ? "border-blue-400 bg-blue-400/15"
+                            : "border-white/10 bg-white/5 hover:border-white/25"
                         }`}
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="mt-1">
-                            {status === "completed" ? (
-                              <CheckCircle className="w-5 h-5 text-green-500" />
-                            ) : status === "in_progress" ? (
-                              <Circle className="w-5 h-5 text-yellow-500" />
-                            ) : (
-                              <Circle className="w-5 h-5 text-gray-500" />
-                            )}
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-white font-medium text-sm">
-                              {module.title}
-                            </div>
-                            <div className="text-gray-400 text-xs mt-1">
-                              {Math.floor((module.duration_seconds || 0) / 60)} min
-                            </div>
-                          </div>
-                        </div>
+                        <span className="flex gap-3">
+                          {status === "completed"
+                            ? <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                            : <Circle className="w-5 h-5 text-slate-500 shrink-0" />}
+                          <span>
+                            <span className="block text-sm font-medium text-white">{module.title}</span>
+                            <span className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                              <Clock3 className="w-3.5 h-3.5" />
+                              {Math.max(1, Math.round(module.duration_seconds / 60))} menit praktik
+                            </span>
+                          </span>
+                        </span>
                       </button>
                     );
                   })}
                 </div>
               </Card>
-
-              {/* Course Stats */}
-              <Card className="bg-black/40 backdrop-blur-sm border-white/10 p-6">
-                <h3 className="text-lg font-bold text-white mb-4">Your Progress</h3>
-                
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm text-gray-400 mb-2">
-                      <span>Completed Modules</span>
-                      <span>{completedModules}/{totalModules}</span>
-                    </div>
-                    <Progress value={overallProgress} className="h-2" />
-                  </div>
-
-                  <div className="pt-4 border-t border-white/10">
-                    <div className="text-sm text-gray-400 mb-2">Time Invested</div>
-                    <div className="text-2xl font-bold text-white">
-                      {Math.floor((progress.reduce((acc, p) => acc + (p.time_spent_seconds || 0), 0)) / 60)} min
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-white/10">
-                    <div className="text-sm text-gray-400 mb-2">Quiz Average</div>
-                    <div className="text-2xl font-bold text-white">
-                      {progress.length > 0
-                        ? Math.round(progress.reduce((acc, p) => acc + (p.quiz_score || 0), 0) / progress.length)
-                        : 0}%
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </div>
+            </aside>
           </div>
         </div>
-      </div>
+      </main>
     </>
   );
 }

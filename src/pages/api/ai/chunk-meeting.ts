@@ -1,17 +1,178 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { supabase } from "@/integrations/supabase/client";
+import OpenAI from "openai";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
+import { getOpenAIErrorResponse } from "@/lib/openai-error";
+import {
+  WORKPLACE_MISSION_VERSION,
+  normalizeWorkplaceMission,
+  type WorkplaceMission,
+} from "@/lib/workplaceMission";
 
-/**
- * AI Meeting Chunking Endpoint
- * Splits long meeting recordings into bite-sized 5-7 minute modules
- * 
- * In production, this would:
- * 1. Use OpenAI Whisper for transcription with timestamps
- * 2. Analyze transcript to detect topic changes (GPT-4)
- * 3. Create natural break points every 5-7 minutes
- * 4. Use FFmpeg to split video at those timestamps
- * 5. Generate thumbnail for each chunk
- */
+const openai = new OpenAI({
+  apiKey:
+    process.env.AI_INTEGRATIONS_OPENAI_API_KEY ||
+    process.env.OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
+
+type GeneratedMission = {
+  title: string;
+  durationSeconds: number;
+  mission: WorkplaceMission;
+};
+
+function createAuthenticatedClient(token: string): SupabaseClient<Database> | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return null;
+
+  return createClient<Database>(url, anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  });
+}
+
+function stringifySource(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.trim();
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function parseGeneratedMissions(value: unknown, workplaceTrack: string): GeneratedMission[] {
+  const payload = asRecord(value);
+  const rawMissions = payload?.missions;
+  if (!Array.isArray(rawMissions) || rawMissions.length < 1 || rawMissions.length > 5) {
+    throw new Error("AI returned an invalid mission count");
+  }
+
+  return rawMissions.map((item, index) => {
+    const raw = asRecord(item);
+    const title = typeof raw?.title === "string" ? raw.title.trim() : "";
+    const durationSeconds = typeof raw?.durationSeconds === "number"
+      ? Math.max(180, Math.min(1200, Math.round(raw.durationSeconds)))
+      : 480;
+    const mission = normalizeWorkplaceMission({
+      ...raw,
+      kind: "workplace-mission",
+      version: WORKPLACE_MISSION_VERSION,
+      workplaceTrack,
+    });
+
+    if (
+      !title ||
+      !mission ||
+      !mission.objective.statement ||
+      mission.objective.successCriteria.length === 0 ||
+      !mission.scenario.prompt ||
+      mission.scenario.options.length < 2 ||
+      !mission.scenario.recommendedAction ||
+      !mission.scenario.options.includes(mission.scenario.recommendedAction) ||
+      mission.practice.length === 0 ||
+      mission.practice.some((step) => !step.instruction || step.checklist.length === 0) ||
+      mission.evidence.length === 0 ||
+      !mission.feedback.prompt ||
+      mission.feedback.questions.length === 0 ||
+      !mission.repetition.nextAction
+    ) {
+      throw new Error(`AI returned an incomplete mission at index ${index}`);
+    }
+
+    return { title, durationSeconds, mission };
+  });
+}
+
+async function generateMissionsFromMeeting(
+  meetingSource: string,
+  workplaceTrack: string,
+  courseTitle: string
+): Promise<GeneratedMission[]> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    response_format: { type: "json_object" },
+    max_completion_tokens: 6000,
+    messages: [
+      {
+        role: "system",
+        content: `Kamu adalah workplace coach. Ubah isi meeting menjadi 2-4 misi kerja singkat yang harus dipraktikkan, bukan course atau modul belajar.
+
+Kembalikan JSON valid dengan bentuk:
+{
+  "missions": [{
+    "title": "judul tindakan, bukan judul pelajaran",
+    "durationSeconds": 300,
+    "objective": {
+      "statement": "hasil kerja yang harus dicapai",
+      "successCriteria": ["indikator yang dapat diamati", "indikator kedua"]
+    },
+    "scenario": {
+      "prompt": "situasi keputusan yang realistis dari meeting",
+      "decisionQuestion": "pertanyaan keputusan",
+      "options": ["opsi A", "opsi B", "opsi C"],
+      "recommendedAction": "harus sama persis dengan salah satu options",
+      "debrief": "alasan praktis"
+    },
+    "knowledge": ["maksimal tiga pegangan singkat"],
+    "practice": [{
+      "id": "practice-1",
+      "instruction": "tindakan nyata di tempat kerja",
+      "checklist": ["langkah yang bisa dicentang", "langkah kedua"],
+      "estimatedMinutes": 10
+    }],
+    "evidence": [{
+      "id": "evidence-1",
+      "type": "photo|checklist|written|recording|reflection|other",
+      "label": "nama bukti",
+      "instruction": "cara menyiapkan bukti",
+      "required": true
+    }],
+    "feedback": {
+      "prompt": "ajakan refleksi",
+      "questions": ["pertanyaan refleksi", "pertanyaan perbaikan"],
+      "coachTip": "saran singkat"
+    },
+    "repetition": {
+      "intervalDays": 3,
+      "nextAction": "cara mengulang pada situasi kerja berikutnya",
+      "cadenceLabel": "Ulangi dalam 3 hari"
+    }
+  }]
+}
+
+Semua isi harus spesifik pada keputusan, action item, masalah, atau standar kerja yang benar-benar muncul dalam sumber meeting. Gunakan Bahasa Indonesia. Jangan menambahkan fakta yang tidak ada di sumber. Setiap misi harus dapat diselesaikan dalam 5-20 menit.`,
+      },
+      {
+        role: "user",
+        content: `Judul misi: ${courseTitle}
+Domain kerja: ${workplaceTrack}
+
+Sumber meeting:
+${meetingSource.slice(0, 30000)}`,
+      },
+    ],
+  });
+
+  const raw = response.choices[0]?.message?.content;
+  if (!raw) throw new Error("AI returned an empty mission response");
+  return parseGeneratedMissions(JSON.parse(raw), workplaceTrack);
+}
 
 export default async function handler(
   req: NextApiRequest,
@@ -22,222 +183,212 @@ export default async function handler(
   }
 
   try {
-    const { courseId, recordingUrl, workplaceTrack = "construction" } = req.body;
-
-    if (!courseId || !recordingUrl) {
-      return res.status(400).json({ error: "Course ID and recording URL required" });
+    const { courseId, workplaceTrack = "custom" } = req.body;
+    if (typeof courseId !== "string" || !courseId) {
+      return res.status(400).json({ error: "Course ID required" });
     }
 
-    // Validate user session
     const authHeader = req.headers.authorization;
-    if (!authHeader) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const token = authHeader.slice("Bearer ".length);
+    const db = createAuthenticatedClient(token);
+    if (!db) {
+      return res.status(503).json({ error: "Database connection is not configured" });
+    }
 
+    const { data: { user }, error: authError } = await db.auth.getUser(token);
     if (authError || !user) {
       return res.status(401).json({ error: "Invalid token" });
     }
 
-    // In production: Call OpenAI Whisper API
-    // const transcription = await openai.audio.transcriptions.create({
-    //   file: recordingFile,
-    //   model: "whisper-1",
-    //   response_format: "verbose_json",
-    //   timestamp_granularities: ["segment"]
-    // });
+    const { data: course, error: courseError } = await db
+      .from("courses")
+      .select("id,user_id,meeting_id,title")
+      .eq("id", courseId)
+      .single();
+    if (courseError || !course) {
+      return res.status(404).json({ error: "Mission container not found" });
+    }
+    if (course.user_id !== user.id) {
+      return res.status(403).json({ error: "You cannot generate missions for this course" });
+    }
+    if (!course.meeting_id) {
+      return res.status(422).json({ error: "Course is not connected to a meeting" });
+    }
 
-    // In production: Analyze transcript for topic changes
-    // const analysis = await openai.chat.completions.create({
-    //   model: "gpt-4-turbo-preview",
-    //   messages: [{
-    //     role: "system",
-    //     content: "Analyze this transcript and identify natural topic breaks for 5-7 minute learning modules. Return JSON with timestamps and titles."
-    //   }]
-    // });
+    const [{ data: meeting, error: meetingError }, { data: notes, error: notesError }] =
+      await Promise.all([
+        db
+          .from("meetings")
+          .select("id,title,host_id,ai_summary,action_items,transcription_data,key_moments")
+          .eq("id", course.meeting_id)
+          .single(),
+        db
+          .from("ai_meeting_notes")
+          .select("text,note_type,speaker_name,timestamp")
+          .eq("meeting_id", course.meeting_id)
+          .order("timestamp", { ascending: true }),
+      ]);
 
-    const missions = await buildWorkplaceMissions(
+    if (meetingError || !meeting) {
+      return res.status(404).json({ error: "Source meeting not found" });
+    }
+    if (!meeting.host_id || meeting.host_id !== user.id) {
+      return res.status(403).json({ error: "You cannot use this meeting as a mission source" });
+    }
+    if (notesError) throw notesError;
+
+    const sourceParts = [
+      meeting.ai_summary,
+      stringifySource(meeting.transcription_data),
+      stringifySource(meeting.action_items),
+      stringifySource(meeting.key_moments),
+      ...(notes || []).map((note) =>
+        `[${note.timestamp}] ${note.speaker_name || "Peserta"} (${note.note_type || "catatan"}): ${note.text}`
+      ),
+    ].filter((part): part is string => Boolean(part?.trim()));
+
+    const meetingSource = sourceParts.join("\n\n");
+    if (meetingSource.length < 40) {
+      return res.status(422).json({
+        error: "Meeting belum memiliki transkrip atau catatan yang cukup untuk membuat misi",
+      });
+    }
+
+    const { data: existingModules, error: existingModulesError } = await db
+      .from("course_modules")
+      .select("id")
+      .eq("course_id", courseId)
+      .limit(1);
+    if (existingModulesError) throw existingModulesError;
+    if (existingModules?.length) {
+      return res.status(409).json({ error: "Misi untuk course ini sudah pernah dibuat" });
+    }
+
+    const track = typeof workplaceTrack === "string" ? workplaceTrack : "custom";
+    const generated = await generateMissionsFromMeeting(
+      meetingSource,
+      track,
+      course.title
+    );
+
+    const { data: recording } = await db
+      .from("meeting_recordings")
+      .select("recording_url")
+      .eq("meeting_id", course.meeting_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const result = await persistMissions(
+      db,
       courseId,
-      recordingUrl,
-      typeof workplaceTrack === "string" ? workplaceTrack : "construction"
+      recording?.recording_url || null,
+      generated
     );
 
     return res.status(200).json({
       success: true,
       message: "Meeting berhasil diubah menjadi workplace missions",
-      modulesCreated: missions.length,
-      modules: missions,
+      missionContractVersion: WORKPLACE_MISSION_VERSION,
+      modulesCreated: result.modules.length,
+      modules: result.modules,
+      missions: result.missions,
     });
   } catch (error) {
-    console.error("Meeting Chunking Error:", error);
+    console.error("Meeting to mission error:", error);
+    const aiErrorResponse = getOpenAIErrorResponse(error);
+    if (aiErrorResponse) {
+      return res.status(aiErrorResponse.status).json(aiErrorResponse.body);
+    }
     return res.status(500).json({
-      error: "Failed to chunk meeting",
+      error: "Failed to create missions from meeting",
       details: error instanceof Error ? error.message : "Unknown error",
     });
   }
 }
 
-/**
- * Builds a practical mission structure while preserving the existing course/module schema.
- * The mission blueprint is stored in module_content.content_data as a worksheet.
- */
-async function buildWorkplaceMissions(
+async function persistMissions(
+  db: SupabaseClient<Database>,
   courseId: string,
-  recordingUrl: string,
-  workplaceTrack: string
+  recordingUrl: string | null,
+  generated: GeneratedMission[]
 ) {
-  const profiles: Record<string, {
-    label: string;
-    skill: string;
-    action: string;
-    evidence: string;
-    scenario: string;
-  }> = {
-    construction: {
-      label: "Konstruksi",
-      skill: "mengidentifikasi risiko sebelum pekerjaan dimulai",
-      action: "lakukan pemeriksaan singkat pada satu area kerja menggunakan checklist",
-      evidence: "foto kondisi lapangan dan checklist yang sudah diisi",
-      scenario: "Kamu menemukan kondisi yang berbeda dari rencana kerja sesaat sebelum aktivitas dimulai.",
-    },
-    "customer-service": {
-      label: "Customer Service",
-      skill: "merespons pelanggan dengan empati dan langkah lanjut yang jelas",
-      action: "buat respons tiga kalimat untuk satu keluhan pelanggan nyata atau simulasi",
-      evidence: "respons tertulis atau rekaman simulasi percakapan",
-      scenario: "Pelanggan sudah menghubungi tiga kali dan mengatakan masalahnya belum selesai.",
-    },
-    sales: {
-      label: "Sales",
-      skill: "menggali kebutuhan sebelum menawarkan solusi",
-      action: "praktikkan tiga pertanyaan discovery pada satu prospek atau simulasi",
-      evidence: "catatan kebutuhan prospek dan refleksi singkat",
-      scenario: "Prospek langsung meminta harga sebelum menjelaskan kebutuhannya.",
-    },
-    hr: {
-      label: "HR & People",
-      skill: "memberikan feedback yang spesifik dan dapat ditindaklanjuti",
-      action: "ubah satu feedback umum menjadi observasi, dampak, dan langkah berikutnya",
-      evidence: "naskah feedback atau catatan sesi coaching",
-      scenario: "Seorang anggota tim menerima feedback 'tingkatkan komunikasi' tanpa contoh perilaku.",
-    },
-    operations: {
-      label: "Operasional",
-      skill: "menjalankan SOP secara konsisten dan mengenali penyimpangan",
-      action: "audit satu proses kerja menggunakan checklist SOP",
-      evidence: "checklist proses dan satu catatan penyimpangan",
-      scenario: "Tim melewati satu langkah SOP karena merasa pekerjaan sedang mendesak.",
-    },
-    custom: {
-      label: "Pekerjaan",
-      skill: "mengubah keputusan meeting menjadi tindakan kerja yang terukur",
-      action: "pilih satu keputusan dan tulis tindakan, PIC, serta batas waktunya",
-      evidence: "catatan tindakan dan bukti tindak lanjut",
-      scenario: "Meeting berakhir dengan beberapa keputusan, tetapi belum ada PIC dan tenggat yang jelas.",
-    },
-  };
-
-  const profile = profiles[workplaceTrack] || profiles.custom;
-  const topics = [
-    {
-      title: `Kenali standar kerja: ${profile.label}`,
-      duration: 300,
-      objective: `Memahami indikator utama untuk ${profile.skill}.`,
-      learn: ["Temukan tujuan kerja dari meeting", "Kenali risiko atau kesalahan yang perlu dicegah", "Tentukan indikator hasil yang bisa diamati"],
-      practice: [`Tuliskan tiga indikator keberhasilan untuk ${profile.skill}.`],
-      evidence: ["Catatan tiga indikator kerja"],
-    },
-    {
-      title: `Praktikkan satu tindakan: ${profile.label}`,
-      duration: 480,
-      objective: `Menerapkan skill pada situasi kerja yang relevan.`,
-      learn: ["Gunakan konteks, bukan jawaban hafalan", "Pilih tindakan yang paling aman dan dapat diverifikasi", "Catat alasan keputusan"],
-      practice: [profile.action],
-      evidence: [profile.evidence],
-    },
-    {
-      title: `Buktikan dan refleksikan: ${profile.label}`,
-      duration: 360,
-      objective: "Menunjukkan penerapan skill dan menentukan perbaikan berikutnya.",
-      learn: ["Bandingkan hasil dengan indikator", "Catat satu hal yang berhasil", "Pilih satu perbaikan untuk pengulangan"],
-      practice: ["Tinjau bukti praktik dan tulis refleksi singkat: lanjutkan, hentikan, mulai."],
-      evidence: [profile.evidence, "Refleksi satu paragraf"],
-    },
-  ];
-
-  const modules = [];
+  const modules: Database["public"]["Tables"]["course_modules"]["Row"][] = [];
+  const missions: WorkplaceMission[] = [];
+  const createdModuleIds: string[] = [];
   let currentTime = 0;
+  let totalDuration = 0;
 
-  for (let i = 0; i < topics.length; i++) {
-    const topic = topics[i];
-    const startTime = currentTime;
-    const endTime = currentTime + topic.duration;
-    currentTime = endTime;
-    
-    // Create module
-    const { data: module, error } = await supabase
-      .from("course_modules")
-      .insert({
-        course_id: courseId,
-        module_number: i + 1,
-        title: topic.title,
-        description: topic.objective,
-        duration_seconds: topic.duration,
-        video_start_time: startTime,
-        video_end_time: endTime,
-        video_url: recordingUrl,
-        key_points: topic.learn,
-      })
-      .select()
-      .single();
+  try {
+    for (let index = 0; index < generated.length; index++) {
+      const item = generated[index];
+      const startTime = currentTime;
+      const endTime = startTime + item.durationSeconds;
+      currentTime = endTime;
 
-    if (error) {
-      console.error("Error creating module:", error);
-      continue;
-    }
+      const { data: module, error: moduleError } = await db
+        .from("course_modules")
+        .insert({
+          course_id: courseId,
+          module_number: index + 1,
+          title: item.title,
+          description: item.mission.objective.statement,
+          duration_seconds: item.durationSeconds,
+          video_start_time: startTime,
+          video_end_time: endTime,
+          video_url: recordingUrl,
+          key_points: item.mission.knowledge,
+        })
+        .select()
+        .single();
+      if (moduleError || !module) throw moduleError || new Error("Module was not created");
+      createdModuleIds.push(module.id);
 
-    if (module) {
-      await supabase.from("module_content").insert({
+      const { error: contentError } = await db.from("module_content").insert({
         module_id: module.id,
         content_type: "worksheet",
-        title: `Panduan Praktik — ${topic.title}`,
+        title: `Misi Praktik — ${item.title}`,
         order_index: 1,
-        content_data: {
-          kind: "workplace-mission",
-          version: 1,
-          workplaceTrack,
-          objective: topic.objective,
-          learn: topic.learn,
-          practice: topic.practice,
-          evidence: topic.evidence,
-          scenario: profile.scenario,
-          feedbackPrompt: "Apa yang berhasil, apa yang perlu diperbaiki, dan kapan skill ini perlu diulang?",
-          repeatAfterDays: i === topics.length - 1 ? 7 : 3,
-        },
+        content_data: item.mission,
       });
+      if (contentError) throw contentError;
 
-      const correctAnswer = "Hentikan sejenak, klarifikasi kondisi, lalu tentukan tindakan dan bukti yang diperlukan.";
-      await supabase.from("module_quizzes").insert({
+      const { error: quizError } = await db.from("module_quizzes").insert({
         module_id: module.id,
         question_number: 1,
-        question_text: `${profile.scenario} Apa respons pertama yang paling tepat?`,
+        question_text: `${item.mission.scenario.prompt} ${item.mission.scenario.decisionQuestion}`,
         question_type: "multiple_choice",
-        options: [
-          "Lanjutkan pekerjaan agar target tetap tercapai.",
-          correctAnswer,
-          "Tunggu orang lain menemukan masalah yang sama.",
-          "Catat masalah tanpa menentukan tindakan berikutnya.",
-        ],
-        correct_answer: correctAnswer,
-        explanation: "Workplace mission mengutamakan klarifikasi konteks, tindakan yang jelas, dan bukti yang dapat diverifikasi.",
+        options: item.mission.scenario.options,
+        correct_answer: item.mission.scenario.recommendedAction,
+        explanation: item.mission.scenario.debrief,
         points: 10,
       });
+      if (quizError) throw quizError;
 
       modules.push(module);
+      missions.push(item.mission);
+      totalDuration += item.durationSeconds;
     }
-  }
 
-  return modules;
+    const { error: updateError } = await db
+      .from("courses")
+      .update({
+        total_modules: modules.length,
+        total_duration_seconds: totalDuration,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", courseId);
+    if (updateError) throw updateError;
+
+    return { modules, missions };
+  } catch (error) {
+    if (createdModuleIds.length) {
+      await db.from("course_modules").delete().in("id", createdModuleIds);
+    }
+    throw error;
+  }
 }

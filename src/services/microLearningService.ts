@@ -1,6 +1,20 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { fetchAI } from "@/lib/ai-client";
+import {
+  emptyMissionProgress,
+  normalizeMissionProgress,
+  normalizeWorkplaceMission,
+  type MissionProgress,
+  type WorkplaceMission,
+} from "@/lib/workplaceMission";
+
+export {
+  emptyMissionProgress,
+  normalizeMissionProgress,
+  normalizeWorkplaceMission,
+};
+export type { MissionProgress, WorkplaceMission };
 
 type _Course = Database["public"]["Tables"]["courses"]["Row"];
 type _CourseModule = Database["public"]["Tables"]["course_modules"]["Row"];
@@ -60,6 +74,12 @@ export const microLearningService = {
       });
 
       const result = await response.json();
+      if (!response.ok) {
+        return {
+          data: null,
+          error: new Error(result?.error || "Gagal membuat misi dari meeting"),
+        };
+      }
       return { data: result, error: null };
     } catch (error) {
       return { data: null, error };
@@ -149,7 +169,12 @@ export const microLearningService = {
       .eq("id", courseId)
       .single();
 
-    if (courseError) return { data: null, error: courseError };
+    if (courseError || !course) {
+      return {
+        data: null,
+        error: courseError || new Error("Mission not found"),
+      };
+    }
 
     const { data: modules, error: modulesError } = await supabase
       .from("course_modules")
@@ -159,7 +184,8 @@ export const microLearningService = {
 
     if (modulesError) return { data: null, error: modulesError };
 
-    const moduleIds = modules.map((module) => module.id);
+    const safeModules = modules || [];
+    const moduleIds = safeModules.map((module) => module.id);
 
     if (moduleIds.length === 0) {
       return { data: { course, modules: [] }, error: null };
@@ -183,7 +209,7 @@ export const microLearningService = {
       return { data: null, error: contentError || quizzesError };
     }
 
-    const hydratedModules = modules.map((module) => ({
+    const hydratedModules = safeModules.map((module) => ({
       ...module,
       content: (content || []).filter((item) => item.module_id === module.id),
       quizzes: (quizzes || []).filter((item) => item.module_id === module.id),
@@ -234,28 +260,22 @@ export const microLearningService = {
       timeSpentSeconds?: number;
       lastPositionSeconds?: number;
       quizScore?: number;
+      missionProgress?: MissionProgress;
     }
   ) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { data: null, error: new Error("Not authenticated") };
 
-    const { data, error } = await supabase
-      .from("learner_progress")
-      .upsert({
-        user_id: user.id,
-        course_id: courseId,
-        module_id: moduleId,
-        status: progressData.status,
-        progress_percentage: progressData.progressPercentage,
-        time_spent_seconds: progressData.timeSpentSeconds,
-        last_position_seconds: progressData.lastPositionSeconds,
-        quiz_score: progressData.quizScore,
-        completed_at:
-          progressData.status === "completed" ? new Date().toISOString() : undefined,
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc("upsert_learner_progress_atomic", {
+      p_course_id: courseId,
+      p_module_id: moduleId,
+      p_status: progressData.status,
+      p_progress_percentage: progressData.progressPercentage ?? null,
+      p_time_spent_seconds: progressData.timeSpentSeconds ?? null,
+      p_last_position_seconds: progressData.lastPositionSeconds ?? null,
+      p_quiz_score: progressData.quizScore ?? null,
+      p_mission_progress: progressData.missionProgress ?? null,
+    });
 
     // Award achievement if module completed
     if (progressData.status === "completed") {
