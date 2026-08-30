@@ -63,6 +63,97 @@ const workplaceTracks = [
   { value: "custom", label: "Bidang lain", description: "Sesuaikan dengan pekerjaanmu" },
 ];
 
+const operatingLayers = [
+  {
+    number: "01",
+    title: "Arah organisasi",
+    label: "Prioritas dan standar",
+    detail: "Tentukan perilaku kerja yang paling berdampak pada mutu, keselamatan, layanan, atau hasil bisnis.",
+    icon: Target,
+    tone: "text-blue-300",
+  },
+  {
+    number: "02",
+    title: "Konteks peran",
+    label: "Pekerjaan yang benar-benar terjadi",
+    detail: "Ambil pemicu dari meeting, SOP, masalah pelanggan, temuan lapangan, atau keputusan harian.",
+    icon: Users,
+    tone: "text-violet-300",
+  },
+  {
+    number: "03",
+    title: "Misi perilaku",
+    label: "Satu skill, satu tujuan",
+    detail: "Ubah konteks menjadi tindakan kecil yang jelas, dapat dilakukan dalam 5–15 menit, dan relevan dengan peran.",
+    icon: BookOpen,
+    tone: "text-amber-300",
+  },
+  {
+    number: "04",
+    title: "Praktik dan bukti",
+    label: "Bukan sekadar selesai",
+    detail: "Peserta menjalankan tindakan, menjawab skenario, lalu mengirim bukti yang bisa diperiksa.",
+    icon: ClipboardCheck,
+    tone: "text-emerald-300",
+  },
+  {
+    number: "05",
+    title: "Pembelajaran tim",
+    label: "Feedback dan pengulangan",
+    detail: "Feedback, pola kesalahan, dan jadwal pengulangan mengubah latihan individu menjadi kebiasaan bersama.",
+    icon: BarChart3,
+    tone: "text-pink-300",
+  },
+];
+
+const executionSteps = [
+  { number: "1", title: "Pemicu", text: "Ada keputusan, risiko, gap, atau masalah kerja." },
+  { number: "2", title: "Konteks", text: "AI membaca situasi dan bahasa sektor yang sesuai." },
+  { number: "3", title: "Misi", text: "Satu skill dirumuskan menjadi target yang konkret." },
+  { number: "4", title: "Praktik", text: "Peserta melakukan tindakan dalam pekerjaan atau simulasi." },
+  { number: "5", title: "Bukti", text: "Hasil praktik dikirim sebagai catatan, checklist, foto, atau rekaman." },
+  { number: "6", title: "Feedback", text: "Perbaikan dan pengulangan dijadwalkan sampai menjadi kebiasaan." },
+];
+
+const sectorPlaybooks = [
+  {
+    sector: "Konstruksi",
+    trigger: "Toolbox meeting atau temuan inspeksi",
+    mission: "Identifikasi risiko sebelum pekerjaan dimulai",
+    proof: "Foto kondisi dan checklist",
+  },
+  {
+    sector: "Customer Service",
+    trigger: "Keluhan pelanggan yang berulang",
+    mission: "Akui masalah, rangkum kebutuhan, sepakati next step",
+    proof: "Simulasi respons dan refleksi",
+  },
+  {
+    sector: "Sales",
+    trigger: "Prospek berhenti merespons",
+    mission: "Ajukan discovery question sebelum menawarkan solusi",
+    proof: "Catatan kebutuhan dan follow-up",
+  },
+  {
+    sector: "HR & People",
+    trigger: "Sesi interview atau coaching",
+    mission: "Berikan feedback yang spesifik dan bisa ditindaklanjuti",
+    proof: "Naskah feedback dan rencana aksi",
+  },
+  {
+    sector: "Operasional",
+    trigger: "SOP tidak konsisten dijalankan",
+    mission: "Jalankan satu checkpoint mutu pada proses kritis",
+    proof: "Checklist proses dan catatan penyimpangan",
+  },
+  {
+    sector: "Bidang lain",
+    trigger: "Masalah kerja yang ingin diperbaiki",
+    mission: "Pilih satu perilaku kerja yang dapat diuji hari ini",
+    proof: "Catatan tindakan dan bukti tindak lanjut",
+  },
+];
+
 export default function MicroLearning() {
   const router = useRouter();
   const { toast } = useToast();
@@ -352,6 +443,124 @@ export default function MicroLearning() {
               </div>
             </Card>
           </div>
+
+          <section id="operating-model" className="mb-8 scroll-mt-24 space-y-6">
+            <Card className="overflow-hidden border-blue-400/20 bg-slate-950/60 shadow-xl">
+              <div className="border-b border-white/10 bg-white/[0.03] p-6 md:p-8">
+                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">
+                      Operating model Chaesa Live
+                    </p>
+                    <h2 className="mt-2 text-2xl font-bold text-white md:text-3xl">
+                      Dari strategi kerja sampai kebiasaan tim.
+                    </h2>
+                    <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-300 md:text-base">
+                      Chaesa Live bukan hanya tempat membuat materi. Ia menghubungkan apa yang ingin
+                      dicapai organisasi dengan perilaku yang harus dipraktikkan orang di situasi kerja nyata.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200 md:max-w-xs">
+                    <span className="font-semibold text-emerald-100">Prinsip inti:</span>{" "}
+                    satu skill, satu praktik, satu bukti.
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-6 p-6 md:p-8 xl:grid-cols-[1.1fr_0.9fr]">
+                <div>
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Dimensi vertikal</p>
+                      <h3 className="mt-1 text-lg font-semibold text-white">Lima lapis pelaksanaan</h3>
+                    </div>
+                    <span className="text-xs text-slate-500">arah → dampak</span>
+                  </div>
+                  <div className="space-y-3">
+                    {operatingLayers.map((layer) => (
+                      <div
+                        key={layer.number}
+                        className="flex gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 transition-colors hover:bg-white/[0.07]"
+                      >
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.08]">
+                          <layer.icon className={`h-5 w-5 ${layer.tone}`} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <span className="text-xs font-bold tracking-wider text-slate-500">{layer.number}</span>
+                            <h4 className="font-semibold text-white">{layer.title}</h4>
+                            <span className="text-xs text-blue-200">{layer.label}</span>
+                          </div>
+                          <p className="mt-1 text-sm leading-relaxed text-slate-400">{layer.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-blue-400/20 bg-blue-950/40 p-5 md:p-6">
+                  <div className="mb-5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">Dimensi horizontal</p>
+                    <h3 className="mt-1 text-lg font-semibold text-white">Satu prosedur untuk semua sektor</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                      Sumber dan bahasa dapat berubah, tetapi cara menjalankan misi tetap konsisten.
+                    </p>
+                  </div>
+                  <div className="space-y-0">
+                    {executionSteps.map((step, index) => (
+                      <div key={step.number} className="relative flex gap-3 pb-5 last:pb-0">
+                        {index < executionSteps.length - 1 && (
+                          <div className="absolute left-[15px] top-8 h-[calc(100%-16px)] w-px bg-blue-400/30" />
+                        )}
+                        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-300/40 bg-blue-400/15 text-xs font-bold text-blue-100">
+                          {step.number}
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-white">{step.title}</h4>
+                          <p className="mt-1 text-sm leading-relaxed text-slate-400">{step.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-6 border-t border-white/10 pt-4 text-xs leading-relaxed text-slate-400">
+                    <span className="font-semibold text-slate-200">Cara membacanya:</span> lapisan vertikal
+                    menjaga agar misi tetap nyambung dengan tujuan, sedangkan prosedur horizontal memastikan
+                    misi benar-benar dijalankan sampai ada perubahan perilaku.
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="border-white/10 bg-white/[0.04] p-6 md:p-8">
+              <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Satu mesin, banyak konteks</p>
+                  <h2 className="mt-1 text-xl font-bold text-white md:text-2xl">Contoh penerapan lintas sektor</h2>
+                </div>
+                <p className="max-w-xl text-sm leading-relaxed text-slate-400">
+                  Domain pack mengganti contoh, risiko, dan standar; mesin praktiknya tetap sama.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {sectorPlaybooks.map((playbook) => (
+                  <div key={playbook.sector} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="font-semibold text-white">{playbook.sector}</h3>
+                      <span className="rounded-full bg-blue-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-blue-200">
+                        domain pack
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs uppercase tracking-wider text-slate-500">Pemicu</p>
+                    <p className="mt-1 text-sm text-slate-300">{playbook.trigger}</p>
+                    <p className="mt-3 text-xs uppercase tracking-wider text-slate-500">Misi</p>
+                    <p className="mt-1 text-sm font-medium leading-relaxed text-blue-100">{playbook.mission}</p>
+                    <p className="mt-3 text-xs uppercase tracking-wider text-slate-500">Bukti</p>
+                    <p className="mt-1 text-sm text-emerald-200">{playbook.proof}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </section>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="bg-white/10 border border-white/20">
