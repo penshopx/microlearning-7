@@ -5,6 +5,7 @@ import {
   emptyMissionProgress,
   normalizeMissionProgress,
   normalizeWorkplaceMission,
+  type MissionEvidenceUpload,
   type MissionProgress,
   type WorkplaceMission,
 } from "@/lib/workplaceMission";
@@ -14,7 +15,7 @@ export {
   normalizeMissionProgress,
   normalizeWorkplaceMission,
 };
-export type { MissionProgress, WorkplaceMission };
+export type { MissionEvidenceUpload, MissionProgress, WorkplaceMission };
 
 type _Course = Database["public"]["Tables"]["courses"]["Row"];
 type _CourseModule = Database["public"]["Tables"]["course_modules"]["Row"];

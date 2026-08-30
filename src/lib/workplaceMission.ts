@@ -64,6 +64,16 @@ export type MissionProgress = {
   selectedDecision: string | null;
   evidenceConfirmed: boolean;
   feedback: string;
+  evidenceUploads: MissionEvidenceUpload[];
+};
+
+export type MissionEvidenceUpload = {
+  evidenceId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string;
+  uploadedAt: string;
 };
 
 const DEFAULT_FEEDBACK_QUESTIONS = [
@@ -228,6 +238,7 @@ export function emptyMissionProgress(): MissionProgress {
     selectedDecision: null,
     evidenceConfirmed: false,
     feedback: "",
+    evidenceUploads: [],
   };
 }
 
@@ -239,5 +250,31 @@ export function normalizeMissionProgress(value: unknown): MissionProgress {
     selectedDecision: typeof raw.selectedDecision === "string" ? raw.selectedDecision : null,
     evidenceConfirmed: raw.evidenceConfirmed === true,
     feedback: typeof raw.feedback === "string" ? raw.feedback : "",
+    evidenceUploads: Array.isArray(raw.evidenceUploads)
+      ? raw.evidenceUploads.flatMap((item) => {
+        const upload = asRecord(item);
+        if (
+          !upload ||
+          typeof upload.evidenceId !== "string" ||
+          typeof upload.fileName !== "string" ||
+          typeof upload.mimeType !== "string" ||
+          typeof upload.sizeBytes !== "number" ||
+          !Number.isFinite(upload.sizeBytes) ||
+          upload.sizeBytes < 0 ||
+          typeof upload.storagePath !== "string" ||
+          typeof upload.uploadedAt !== "string"
+        ) {
+          return [];
+        }
+        return [{
+          evidenceId: upload.evidenceId,
+          fileName: upload.fileName,
+          mimeType: upload.mimeType,
+          sizeBytes: Math.round(upload.sizeBytes),
+          storagePath: upload.storagePath,
+          uploadedAt: upload.uploadedAt,
+        }];
+      })
+      : [],
   };
 }

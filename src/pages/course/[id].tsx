@@ -19,6 +19,8 @@ import {
   Play,
   Repeat2,
   Target,
+  Trash2,
+  Upload,
 } from "lucide-react";
 import { SEO } from "@/components/SEO";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import {
   emptyMissionProgress,
@@ -33,6 +36,7 @@ import {
   normalizeMissionProgress,
   normalizeWorkplaceMission,
   type MissionProgress,
+  type MissionEvidenceUpload,
   type WorkplaceMission,
 } from "@/services/microLearningService";
 
@@ -47,10 +51,39 @@ type Course = Database["public"]["Tables"]["courses"]["Row"] & {
   modules?: Module[];
 };
 
+const MISSION_EVIDENCE_BUCKET = "mission-evidence";
+const MAX_EVIDENCE_BYTES = 50 * 1024 * 1024;
+const DOCUMENT_MIME_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+
 function getQuizOptions(options: ModuleQuiz["options"]): string[] {
   return Array.isArray(options)
     ? options.filter((option): option is string => typeof option === "string")
     : [];
+}
+
+function getEvidenceAccept(type: WorkplaceMission["evidence"][number]["type"]): string {
+  if (type === "photo") return "image/*";
+  if (type === "recording") return "audio/*,video/*";
+  return "image/*,.pdf,.txt,.doc,.docx";
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function sanitizeFileName(fileName: string): string {
+  const sanitized = fileName
+    .normalize("NFKD")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return sanitized || "evidence";
 }
 
 function mergeProgress(
@@ -74,11 +107,15 @@ export default function CoursePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
+  const [removingEvidenceId, setRemovingEvidenceId] = useState<string | null>(null);
+  const [evidenceUrls, setEvidenceUrls] = useState<Record<string, string>>({});
   const [errorMessage, setErrorMessage] = useState("");
   const [completionMessage, setCompletionMessage] = useState("");
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const saveSequenceRef = useRef(0);
   const finalizingRef = useRef(false);
+  const evidenceOperationRef = useRef(false);
 
   useEffect(() => {
     if (!courseId) return;
@@ -118,7 +155,41 @@ export default function CoursePage() {
     setErrorMessage("");
     setFinalizing(false);
     finalizingRef.current = false;
+    setEvidenceUrls({});
   }, [currentModule?.id]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadEvidenceUrls = async () => {
+      const uploads = missionProgress.evidenceUploads;
+      if (!uploads.length) {
+        setEvidenceUrls({});
+        return;
+      }
+
+      const signedEntries = await Promise.all(
+        uploads.map(async (upload) => {
+          const { data } = await supabase.storage
+            .from(MISSION_EVIDENCE_BUCKET)
+            .createSignedUrl(upload.storagePath, 60 * 60);
+          return data?.signedUrl ? [upload.evidenceId, data.signedUrl] as const : null;
+        })
+      );
+
+      if (!active) return;
+      setEvidenceUrls(
+        Object.fromEntries(signedEntries.filter(
+          (entry): entry is readonly [string, string] => Boolean(entry)
+        ))
+      );
+    };
+
+    void loadEvidenceUrls();
+    return () => {
+      active = false;
+    };
+  }, [missionProgress.evidenceUploads]);
 
   const completedModules = progress.filter((item) => item.status === "completed").length;
   const totalModules = course?.modules?.length || 0;
@@ -143,17 +214,22 @@ export default function CoursePage() {
     return getQuizOptions(currentModule?.quizzes?.[0]?.options ?? null);
   }, [currentModule?.quizzes, mission]);
 
-  const requiredEvidence = mission?.evidence.filter((item) => item.required).length || 0;
-  const missionLocked = moduleProgress?.status === "completed" || finalizing;
+  const requiredEvidenceItems = mission?.evidence.filter((item) => item.required) || [];
+  const requiredEvidence = requiredEvidenceItems.length;
+  const evidenceBusy = Boolean(uploadingEvidenceId || removingEvidenceId);
+  const missionLocked = moduleProgress?.status === "completed" || finalizing || evidenceBusy;
   const practiceComplete = practiceChecks.length > 0 &&
     practiceChecks.every((item) => missionProgress.checkedPracticeIds.includes(item.id));
   const decisionComplete = scenarioOptions.length === 0 || Boolean(missionProgress.selectedDecision);
   const reflectionComplete = missionProgress.feedback.trim().length >= 10;
+  const evidenceComplete = requiredEvidence === 0 || requiredEvidenceItems.every((item) =>
+    missionProgress.evidenceUploads.some((upload) => upload.evidenceId === item.id)
+  );
   const canCompleteMission = Boolean(
     mission &&
     practiceComplete &&
     decisionComplete &&
-    (requiredEvidence === 0 || missionProgress.evidenceConfirmed) &&
+    evidenceComplete &&
     reflectionComplete
   );
 
@@ -203,7 +279,7 @@ export default function CoursePage() {
   };
 
   const togglePracticeCheck = (checkId: string) => {
-    if (finalizingRef.current || moduleProgress?.status === "completed") return;
+    if (evidenceOperationRef.current || finalizingRef.current || moduleProgress?.status === "completed") return;
     setMissionProgress((current) => {
       const checked = current.checkedPracticeIds.includes(checkId);
       const next = {
@@ -218,7 +294,7 @@ export default function CoursePage() {
   };
 
   const chooseDecision = (option: string) => {
-    if (finalizingRef.current || moduleProgress?.status === "completed") return;
+    if (evidenceOperationRef.current || finalizingRef.current || moduleProgress?.status === "completed") return;
     setMissionProgress((current) => {
       const next = { ...current, selectedDecision: option };
       void persistMissionProgress(next);
@@ -226,20 +302,178 @@ export default function CoursePage() {
     });
   };
 
-  const confirmEvidence = () => {
-    if (finalizingRef.current || moduleProgress?.status === "completed") return;
-    setMissionProgress((current) => {
+  const hasRequiredEvidence = (uploads: MissionEvidenceUpload[]) =>
+    requiredEvidence === 0 || requiredEvidenceItems.every((item) =>
+      uploads.some((upload) => upload.evidenceId === item.id)
+    );
+
+  const handleEvidenceUpload = async (
+    evidenceId: string,
+    file: File | null,
+    input: HTMLInputElement
+  ) => {
+    input.value = "";
+    if (!file || !currentModule || !mission) return;
+    if (
+      evidenceOperationRef.current ||
+      finalizingRef.current ||
+      moduleProgress?.status === "completed"
+    ) return;
+
+    const evidence = mission.evidence.find((item) => item.id === evidenceId);
+    if (!evidence) return;
+
+    const isMedia = file.type.startsWith("image/") ||
+      file.type.startsWith("audio/") ||
+      file.type.startsWith("video/");
+    const isDocument = DOCUMENT_MIME_TYPES.has(file.type);
+    if (!isMedia && !isDocument) {
+      setErrorMessage("Tipe file belum didukung. Gunakan foto, PDF, DOC, DOCX, TXT, audio, atau video.");
+      return;
+    }
+    if (evidence.type === "photo" && !file.type.startsWith("image/")) {
+      setErrorMessage("Bukti ini membutuhkan foto atau gambar.");
+      return;
+    }
+    if (evidence.type === "recording" &&
+      !file.type.startsWith("audio/") &&
+      !file.type.startsWith("video/")) {
+      setErrorMessage("Bukti ini membutuhkan rekaman audio atau video.");
+      return;
+    }
+    if (file.size > MAX_EVIDENCE_BYTES) {
+      setErrorMessage("Ukuran file maksimal 50 MB.");
+      return;
+    }
+
+    evidenceOperationRef.current = true;
+    setUploadingEvidenceId(evidenceId);
+    setErrorMessage("");
+    setCompletionMessage("");
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setErrorMessage("Masuk terlebih dahulu untuk mengunggah bukti.");
+        return;
+      }
+
+      const storagePath = [
+        user.id,
+        courseId,
+        currentModule.id,
+        evidenceId,
+        `${globalThis.crypto.randomUUID()}-${sanitizeFileName(file.name)}`,
+      ].join("/");
+      const { error: uploadError } = await supabase.storage
+        .from(MISSION_EVIDENCE_BUCKET)
+        .upload(storagePath, file, {
+          cacheControl: "3600",
+          contentType: file.type,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        setErrorMessage(`Bukti belum tersimpan: ${uploadError.message}`);
+        return;
+      }
+
+      const previousUpload = missionProgress.evidenceUploads.find(
+        (upload) => upload.evidenceId === evidenceId
+      );
+      const nextUploads: MissionEvidenceUpload[] = [
+        ...missionProgress.evidenceUploads.filter((upload) => upload.evidenceId !== evidenceId),
+        {
+          evidenceId,
+          fileName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          storagePath,
+          uploadedAt: new Date().toISOString(),
+        },
+      ];
       const next = {
-        ...current,
-        evidenceConfirmed: !current.evidenceConfirmed,
+        ...missionProgress,
+        evidenceUploads: nextUploads,
+        evidenceConfirmed: hasRequiredEvidence(nextUploads),
       };
-      void persistMissionProgress(next);
-      return next;
-    });
+      const previous = missionProgress;
+      setMissionProgress(next);
+      const saved = await persistMissionProgress(next);
+
+      if (!saved) {
+        await supabase.storage.from(MISSION_EVIDENCE_BUCKET).remove([storagePath]);
+        setMissionProgress(previous);
+        return;
+      }
+
+      if (previousUpload) {
+        const { error: cleanupError } = await supabase.storage
+          .from(MISSION_EVIDENCE_BUCKET)
+          .remove([previousUpload.storagePath]);
+        if (cleanupError) {
+          setErrorMessage("Bukti baru tersimpan, tetapi file lama belum terhapus.");
+        }
+      }
+      setCompletionMessage("Bukti praktik berhasil disimpan.");
+    } catch {
+      setErrorMessage("Bukti belum tersimpan karena koneksi bermasalah. Coba lagi.");
+    } finally {
+      evidenceOperationRef.current = false;
+      setUploadingEvidenceId(null);
+    }
+  };
+
+  const handleRemoveEvidence = async (evidenceId: string) => {
+    if (
+      evidenceOperationRef.current ||
+      finalizingRef.current ||
+      moduleProgress?.status === "completed"
+    ) return;
+    const upload = missionProgress.evidenceUploads.find((item) => item.evidenceId === evidenceId);
+    if (!upload) return;
+
+    evidenceOperationRef.current = true;
+    setRemovingEvidenceId(evidenceId);
+    setErrorMessage("");
+    setCompletionMessage("");
+
+    try {
+      const nextUploads = missionProgress.evidenceUploads.filter(
+        (item) => item.evidenceId !== evidenceId
+      );
+      const previous = missionProgress;
+      const next = {
+        ...missionProgress,
+        evidenceUploads: nextUploads,
+        evidenceConfirmed: hasRequiredEvidence(nextUploads),
+      };
+      setMissionProgress(next);
+      const saved = await persistMissionProgress(next);
+
+      if (!saved) {
+        setMissionProgress(previous);
+        return;
+      }
+
+      const { error: removeError } = await supabase.storage
+        .from(MISSION_EVIDENCE_BUCKET)
+        .remove([upload.storagePath]);
+      if (removeError) {
+        setErrorMessage("Bukti dihapus dari progres, tetapi file lama belum terhapus.");
+        return;
+      }
+      setCompletionMessage("Bukti praktik dihapus.");
+    } catch {
+      setErrorMessage("Bukti belum bisa dihapus karena koneksi bermasalah. Coba lagi.");
+    } finally {
+      evidenceOperationRef.current = false;
+      setRemovingEvidenceId(null);
+    }
   };
 
   const completeMission = async () => {
-    if (!canCompleteMission) return;
+    if (evidenceOperationRef.current || !canCompleteMission) return;
     finalizingRef.current = true;
     setFinalizing(true);
     const saved = await persistMissionProgress(missionProgress, "completed");
@@ -541,35 +775,129 @@ export default function CoursePage() {
                       </div>
                     </div>
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                      {mission.evidence.map((evidence) => (
-                        <div key={evidence.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <FileCheck2 className="w-5 h-5 text-emerald-300" />
-                            <Badge variant="outline" className="border-white/15 text-slate-300 capitalize">
-                              {evidence.type}
-                            </Badge>
+                      {mission.evidence.map((evidence) => {
+                        const upload = missionProgress.evidenceUploads.find(
+                          (item) => item.evidenceId === evidence.id
+                        );
+                        const isUploading = uploadingEvidenceId === evidence.id;
+                        const isRemoving = removingEvidenceId === evidence.id;
+
+                        return (
+                          <div key={evidence.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <FileCheck2 className="w-5 h-5 text-emerald-300" />
+                              <div className="flex gap-2">
+                                {evidence.required && (
+                                  <Badge className="bg-amber-400/15 text-amber-200 border border-amber-300/20">
+                                    Wajib
+                                  </Badge>
+                                )}
+                                <Badge variant="outline" className="border-white/15 text-slate-300 capitalize">
+                                  {evidence.type}
+                                </Badge>
+                              </div>
+                            </div>
+                            <p className="mt-3 font-semibold">{evidence.label}</p>
+                            <p className="mt-1 text-sm text-slate-400">{evidence.instruction}</p>
+
+                            {upload ? (
+                              <div className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-emerald-100">
+                                      {upload.fileName}
+                                    </p>
+                                    <p className="mt-1 text-xs text-emerald-200/70">
+                                      {formatFileSize(upload.sizeBytes)} · tersimpan{" "}
+                                      {new Date(upload.uploadedAt).toLocaleDateString("id-ID")}
+                                    </p>
+                                  </div>
+                                  <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300" />
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {evidenceUrls[evidence.id] && (
+                                    <a
+                                      href={evidenceUrls[evidence.id]}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center rounded-md border border-emerald-300/30 px-3 py-1.5 text-xs font-medium text-emerald-100 hover:bg-emerald-300/10"
+                                    >
+                                      Lihat file
+                                    </a>
+                                  )}
+                                  {!missionLocked && (
+                                    <label className="inline-flex cursor-pointer items-center rounded-md border border-white/15 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/10">
+                                      <Upload className="mr-1.5 h-3.5 w-3.5" />
+                                      {isUploading ? "Mengunggah..." : "Ganti"}
+                                      <input
+                                        type="file"
+                                        className="sr-only"
+                                        accept={getEvidenceAccept(evidence.type)}
+                                        disabled={isUploading || isRemoving}
+                                        onChange={(event) => void handleEvidenceUpload(
+                                          evidence.id,
+                                          event.currentTarget.files?.[0] || null,
+                                          event.currentTarget
+                                        )}
+                                      />
+                                    </label>
+                                  )}
+                                  {!missionLocked && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled={isUploading || isRemoving}
+                                      onClick={() => void handleRemoveEvidence(evidence.id)}
+                                      className="h-8 px-3 text-xs text-red-200 hover:bg-red-400/10 hover:text-red-100"
+                                    >
+                                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                      {isRemoving ? "Menghapus..." : "Hapus"}
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <label className={`mt-4 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-4 text-center transition ${
+                                isUploading
+                                  ? "border-blue-400/40 bg-blue-400/10"
+                                  : "border-white/20 bg-black/15 hover:border-emerald-400/40 hover:bg-emerald-400/5"
+                              }`}>
+                                <Upload className="h-5 w-5 text-emerald-300" />
+                                <span className="mt-2 text-sm font-medium text-white">
+                                  {isUploading ? "Mengunggah bukti..." : "Pilih file bukti"}
+                                </span>
+                                <span className="mt-1 text-xs text-slate-500">
+                                  Foto, dokumen, audio, atau video · maks. 50 MB
+                                </span>
+                                <input
+                                  type="file"
+                                  className="sr-only"
+                                  accept={getEvidenceAccept(evidence.type)}
+                                  disabled={missionLocked || isUploading || isRemoving}
+                                  onChange={(event) => void handleEvidenceUpload(
+                                    evidence.id,
+                                    event.currentTarget.files?.[0] || null,
+                                    event.currentTarget
+                                  )}
+                                />
+                              </label>
+                            )}
                           </div>
-                          <p className="mt-3 font-semibold">{evidence.label}</p>
-                          <p className="mt-1 text-sm text-slate-400">{evidence.instruction}</p>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={confirmEvidence}
-                      disabled={missionLocked}
-                      className={`mt-5 w-full border-white/15 ${
-                        missionProgress.evidenceConfirmed
-                          ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
-                          : "text-white hover:bg-white/10"
-                      }`}
-                    >
-                      <FileCheck2 className="w-4 h-4 mr-2" />
-                      {missionProgress.evidenceConfirmed
-                        ? "Bukti sudah siap ditinjau"
-                        : "Konfirmasi bukti sudah siap"}
-                    </Button>
+                    <div className={`mt-5 rounded-xl border p-4 text-sm ${
+                      evidenceComplete
+                        ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
+                        : "border-amber-300/20 bg-amber-300/5 text-amber-100"
+                    }`}>
+                      {evidenceComplete
+                        ? "Semua bukti wajib sudah tersimpan dan siap ditinjau."
+                        : `${requiredEvidenceItems.filter((item) =>
+                          !missionProgress.evidenceUploads.some((upload) => upload.evidenceId === item.id)
+                        ).length} bukti wajib belum diunggah.`}
+                    </div>
                   </Card>
 
                   <Card className="border-blue-400/20 bg-blue-950/35 p-6">
@@ -607,7 +935,7 @@ export default function CoursePage() {
                     <Button
                       type="button"
                       onClick={completeMission}
-                      disabled={!canCompleteMission || saving || moduleProgress?.status === "completed"}
+                      disabled={!canCompleteMission || saving || missionLocked}
                       className="mt-5 w-full bg-blue-500 hover:bg-blue-400 text-white font-semibold"
                     >
                       <CheckCircle2 className="w-4 h-4 mr-2" />

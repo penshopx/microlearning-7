@@ -93,6 +93,35 @@ describe("normalizeMissionProgress", () => {
       selectedDecision: null,
       evidenceConfirmed: true,
       feedback: "",
+      evidenceUploads: [],
     });
+  });
+
+  it("keeps valid evidence metadata and drops malformed entries", () => {
+    expect(normalizeMissionProgress({
+      evidenceUploads: [
+        {
+          evidenceId: "evidence-1",
+          fileName: "foto-lapangan.jpg",
+          mimeType: "image/jpeg",
+          sizeBytes: 2048,
+          storagePath: "user/course/module/evidence-1/file.jpg",
+          uploadedAt: "2026-08-30T10:00:00.000Z",
+        },
+        {
+          evidenceId: "evidence-2",
+          fileName: "rusak.pdf",
+        },
+      ],
+    }).evidenceUploads).toEqual([
+      {
+        evidenceId: "evidence-1",
+        fileName: "foto-lapangan.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 2048,
+        storagePath: "user/course/module/evidence-1/file.jpg",
+        uploadedAt: "2026-08-30T10:00:00.000Z",
+      },
+    ]);
   });
 });
