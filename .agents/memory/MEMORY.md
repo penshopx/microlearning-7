@@ -1,0 +1,1 @@
+- [Reproducible npm lockfiles](npm-lockfile-reproducibility.md) — validate dependency moves with a clean production install; an existing hoisted tree can hide lockfile inconsistencies.
