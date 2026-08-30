@@ -12,7 +12,7 @@ import {
   GraduationCap, Layers, Users, Clock, ChevronRight,
   Sparkles, Zap, Shield, Brain, Rocket, Medal, Crown,
   BarChart3, CheckCircle2, Play,
-  FileText, Map
+  FileText, Map, ShieldCheck
 } from "lucide-react";
 
 interface DashboardStats {
@@ -371,7 +371,7 @@ function XPProgressRing({ xp, maxXP }: { xp: number; maxXP: number }) {
 }
 
 export default function DashboardPage() {
-  const { user, isLoggedIn, isLoading: authLoading, userName, userId } = useAuth();
+  const { user, isLoggedIn, isLoading: authLoading, userName, userId, isAdmin } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [activities, setActivities] = useState<RecentActivity[]>([]);
@@ -589,6 +589,15 @@ export default function DashboardPage() {
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Mapping kompetensi tim</p>
                     </div>
                   </Link>
+                  {isAdmin && (
+                    <Link href="/admin" className="group">
+                      <div className="p-4 rounded-xl border border-purple-200 dark:border-purple-800/50 bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-900/20 dark:to-violet-900/20 hover:shadow-md transition-all">
+                        <ShieldCheck className="w-8 h-8 text-purple-600 dark:text-purple-400 mb-2" />
+                        <p className="font-semibold text-gray-900 dark:text-white text-sm group-hover:text-purple-600 transition-colors">Admin</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Status dan konfigurasi sistem</p>
+                      </div>
+                    </Link>
+                  )}
                 </div>
               </Card>
             </>
