@@ -5,8 +5,11 @@
   "scripts": {
     "dev": "next dev -p 5000 -H 0.0.0.0",
     "build": "next build",
+    "prebuild": "npm run audit",
     "start": "next start -p 5000 -H 0.0.0.0",
-    "lint": "next lint"
+    "lint": "next lint",
+    "audit": "npm audit --audit-level=high",
+    "postinstall": "npm run audit"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
