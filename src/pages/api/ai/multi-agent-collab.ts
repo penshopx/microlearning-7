@@ -133,22 +133,213 @@ Gunakan format dengan sub-heading yang jelas. Bahasa Indonesia profesional.`;
   return resp.choices[0]?.message?.content || "—";
 }
 
+/* ── Streaming helpers ──────────────────────────────── */
+async function streamSpecialist(
+  agentId: AgentId,
+  message: string,
+  history: Array<{ role: string; content: string }>,
+  memoryContext: string,
+  onChunk: (chunk: string) => void,
+): Promise<string> {
+  const agent = AGENTS[agentId];
+  const citationNote = `\nPENTING: Sebutkan kode standar secara eksplisit dan lengkap (contoh: SNI 2847:2019, PP 50/2012, ISO 45001:2018, FIDIC 1999, PUIL 2011, SNI 8460:2017, PMBOK 7th). Kamu sedang berkolaborasi dengan ahli lain — fokus pada keahlian spesifikmu, jawab terstruktur dan ringkas (maksimal 400 kata).`;
+
+  const systemContent = memoryContext
+    ? `${agent.systemPrompt}${citationNote}\n\n${memoryContext}`
+    : `${agent.systemPrompt}${citationNote}`;
+
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    { role: "system", content: systemContent },
+  ];
+  for (const h of history.slice(-6)) {
+    if (h.role === "user" || h.role === "assistant") {
+      messages.push({ role: h.role as "user" | "assistant", content: h.content });
+    }
+  }
+  messages.push({ role: "user", content: message });
+
+  const stream = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages,
+    max_completion_tokens: 800,
+    stream: true,
+  });
+
+  let response = "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) {
+      response += delta;
+      onChunk(delta);
+    }
+  }
+  return response;
+}
+
+async function streamSynthesis(
+  query: string,
+  contributions: Array<{ agent: string; title: string; response: string }>,
+  onChunk: (chunk: string) => void,
+): Promise<string> {
+  const parts = contributions.map(c => `**${c.agent} (${c.title}):**\n${c.response}`).join("\n\n---\n\n");
+  const prompt = `Kamu adalah AI Synthesizer untuk sistem multi-agent konstruksi Indonesia.
+
+Dua ahli telah memberikan jawaban untuk pertanyaan: "${query}"
+
+${parts}
+
+Buat SINTESIS ringkas (maksimal 200 kata) yang:
+1. Mengidentifikasi poin kunci dari masing-masing ahli
+2. Menghubungkan insight antar disiplin ilmu
+3. Memberikan 2-3 rekomendasi tindakan konkret
+
+Gunakan format dengan sub-heading yang jelas. Bahasa Indonesia profesional.`;
+
+  const stream = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_completion_tokens: 600,
+    stream: true,
+  });
+
+  let synthesis = "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) {
+      synthesis += delta;
+      onChunk(delta);
+    }
+  }
+  return synthesis || "—";
+}
+
+async function generateFollowups(message: string, signal?: AbortSignal): Promise<string[]> {
+  const followupResp = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{
+      role: "user",
+      content: `Pertanyaan: "${message}". Dua ahli menjawab. Buat 3 pertanyaan follow-up singkat (max 10 kata). JSON: {"followups":["...","...","..."]}`,
+    }],
+    max_completion_tokens: 200,
+    response_format: { type: "json_object" },
+  }, signal ? { signal } : undefined);
+  const followupRaw = JSON.parse(followupResp.choices[0]?.message?.content || "{}");
+  return followupRaw.followups || [];
+}
+
+async function buildNonStreamingResponse(
+  message: string,
+  history: Array<{ role: string; content: string }>,
+  sessionId: string | undefined,
+  memoryContext: string,
+) {
+  const selectedAgents = await routeToTopTwo(message, history);
+  const [resp1, resp2] = await Promise.all([
+    callSpecialist(selectedAgents[0].agentId, message, history, memoryContext),
+    callSpecialist(selectedAgents[1].agentId, message, history, memoryContext),
+  ]);
+
+  const contributions = [
+    {
+      agent: { ...AGENTS[selectedAgents[0].agentId], routing: selectedAgents[0] },
+      response: resp1,
+    },
+    {
+      agent: { ...AGENTS[selectedAgents[1].agentId], routing: selectedAgents[1] },
+      response: resp2,
+    },
+  ];
+  const synthesis = await synthesize(
+    message,
+    contributions.map(c => ({
+      agent: c.agent.name,
+      title: c.agent.title,
+      response: c.response,
+    })),
+  );
+  const followups = await generateFollowups(message);
+
+  return {
+    success: true,
+    mode: "collab",
+    contributions,
+    synthesis,
+    followups,
+    sessionId,
+  };
+}
+
 /* ── Handler ────────────────────────────────────────── */
+export const config = { api: { responseLimit: false } };
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  try {
-    const { message, history = [], sessionId, memoryContext = "" } = req.body;
-    if (!message?.trim()) return res.status(400).json({ error: "message is required" });
+  const { message, history = [], sessionId, memoryContext = "", stream = false } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: "message is required" });
 
+  // Keep the original JSON response available to older callers and as a
+  // deliberate fallback when a streaming client is not available.
+  if (stream === false) {
+    try {
+      return res.status(200).json(await buildNonStreamingResponse(message, history, sessionId, memoryContext));
+    } catch (err) {
+      console.error("Multi-agent collab error:", err);
+      const aiErr = classifyOpenAIError(err);
+      if (aiErr.isAIUnavailable) {
+        return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+      }
+      return res.status(500).json({
+        error: "Gagal memproses kolaborasi multi-agent",
+        details: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }
+
+  const { initSSE, sseEvent, sseDone, sseError } = await import("@/lib/sse");
+  initSSE(res);
+
+  try {
     // 1. Orchestrator picks top 2 agents
     const selectedAgents = await routeToTopTwo(message, history);
+    sseEvent(res, "routing", { agents: selectedAgents });
+    const followupsPromise = generateFollowups(message, AbortSignal.timeout(4000)).catch(err => {
+      console.warn("Multi-agent collab follow-up generation failed:", err);
+      return [] as string[];
+    });
 
     // 2. Both specialists respond in parallel (Event-Driven: async parallel processing)
-    const [resp1, resp2] = await Promise.all([
-      callSpecialist(selectedAgents[0].agentId, message, history, memoryContext),
-      callSpecialist(selectedAgents[1].agentId, message, history, memoryContext),
-    ]);
+    const specialistResults = await Promise.allSettled(
+      selectedAgents.map((selection, index) => {
+        let pendingChunk = "";
+        const flushChunk = () => {
+          if (!pendingChunk) return;
+          sseEvent(res, "contribution", { index, chunk: pendingChunk });
+          pendingChunk = "";
+        };
+
+        return streamSpecialist(
+          selection.agentId,
+          message,
+          history,
+          memoryContext,
+          chunk => {
+            pendingChunk += chunk;
+            if (pendingChunk.length >= 32) flushChunk();
+          },
+        ).then(response => {
+          flushChunk();
+          sseEvent(res, "contribution-done", { index });
+          return response;
+        });
+      }),
+    );
+    const failedSpecialist = specialistResults.find(
+      result => result.status === "rejected",
+    );
+    if (failedSpecialist?.status === "rejected") throw failedSpecialist.reason;
+    const resp1 = specialistResults[0].status === "fulfilled" ? specialistResults[0].value : "—";
+    const resp2 = specialistResults[1].status === "fulfilled" ? specialistResults[1].value : "—";
 
     const contributions = [
       {
@@ -162,45 +353,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ];
 
     // 3. Synthesize (Blackboard: agents contribute, synthesizer distils)
-    const synthesis = await synthesize(
+    let pendingSynthesisChunk = "";
+    const flushSynthesisChunk = () => {
+      if (!pendingSynthesisChunk) return;
+      sseEvent(res, "synthesis", { chunk: pendingSynthesisChunk });
+      pendingSynthesisChunk = "";
+    };
+    const synthesis = await streamSynthesis(
       message,
       contributions.map(c => ({
         agent: c.agent.name,
         title: c.agent.title,
         response: c.response,
       })),
+      chunk => {
+        pendingSynthesisChunk += chunk;
+        if (pendingSynthesisChunk.length >= 32) flushSynthesisChunk();
+      },
     );
+    flushSynthesisChunk();
+    sseEvent(res, "synthesis-done", {});
 
     // 4. Generate follow-ups
-    const followupResp = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{
-        role: "user",
-        content: `Pertanyaan: "${message}". Dua ahli menjawab. Buat 3 pertanyaan follow-up singkat (max 10 kata). JSON: {"followups":["...","...","..."]}`,
-      }],
-      max_completion_tokens: 200,
-      response_format: { type: "json_object" },
-    });
-    const followupRaw = JSON.parse(followupResp.choices[0]?.message?.content || "{}");
+    const followups = await followupsPromise;
 
-    return res.status(200).json({
+    sseEvent(res, "done", {
       success: true,
       mode: "collab",
       contributions,
       synthesis,
-      followups: followupRaw.followups || [],
+      followups,
       sessionId,
     });
+    sseDone(res);
 
   } catch (err) {
     console.error("Multi-agent collab error:", err);
     const aiErr = classifyOpenAIError(err);
-    if (aiErr.isAIUnavailable) {
-      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
-    }
-    return res.status(500).json({
-      error: "Gagal memproses kolaborasi multi-agent",
-      details: err instanceof Error ? err.message : "Unknown error",
-    });
+    sseError(res, aiErr.isAIUnavailable ? aiErr.userMessage : "Gagal memproses kolaborasi multi-agent");
   }
 }

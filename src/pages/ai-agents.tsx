@@ -35,6 +35,22 @@ import type { Citation } from "@/lib/standards-data";
 interface HistoryItem { role: "user" | "assistant"; content: string; }
 interface AgentInfo { id: string; name: string; title: string; icon: string; color: string; bg: string; accent: string; }
 interface Contribution { agent: AgentInfo & { routing: { agentId: string; confidence: number; reason: string } }; response: string; }
+type CollabTab = "synth" | "0" | "1";
+interface CollabData {
+  contributions: Contribution[];
+  synthesis: string;
+  activeStreamTab?: CollabTab;
+}
+interface CollabRoutingSelection { agentId: string; confidence?: number; reason?: string; }
+interface CollabSSEPayload {
+  agents?: CollabRoutingSelection[];
+  index?: number;
+  chunk?: string;
+  contributions?: Contribution[];
+  synthesis?: string;
+  followups?: string[];
+  error?: string;
+}
 
 interface AgentMessage {
   id: string;
@@ -44,7 +60,7 @@ interface AgentMessage {
   agent?: AgentInfo;
   followups?: string[];
   routing?: { reason: string; confidence: number; manual: boolean };
-  collab?: { contributions: Contribution[]; synthesis: string };
+  collab?: CollabData;
   timestamp: Date;
 }
 
@@ -267,12 +283,17 @@ function CitationPanel({ citations }: { citations: Citation[] }) {
 }
 
 /* ── Collab message (Blackboard pattern output) ─────── */
-function CollabMessage({ collab, followups, onFollowup }: {
-  collab: { contributions: Contribution[]; synthesis: string };
+function CollabMessage({ collab, followups, onFollowup, isStreaming }: {
+  collab: CollabData;
   followups?: string[];
   onFollowup: (q: string) => void;
+  isStreaming?: boolean;
 }) {
-  const [tab, setTab] = useState<"synth" | "0" | "1">("synth");
+  const [tab, setTab] = useState<CollabTab>("synth");
+
+  useEffect(() => {
+    if (collab.activeStreamTab) setTab(collab.activeStreamTab);
+  }, [collab.activeStreamTab]);
   const tabs = [
     { id: "synth", label: "🔄 Sintesis", short: "Sintesis" },
     { id: "0",    label: `${collab.contributions[0]?.agent?.icon} ${collab.contributions[0]?.agent?.name}`, short: collab.contributions[0]?.agent?.name },
@@ -342,7 +363,10 @@ function CollabMessage({ collab, followups, onFollowup }: {
             <p className="text-xs font-bold text-gray-700 dark:text-gray-300">Sintesis Multi-Perspektif</p>
           </div>
         )}
-        <MarkdownContent text={activeContent || ""} />
+        <MarkdownContent
+          text={activeContent || (isStreaming ? "Menunggu respons..." : "")}
+          isStreaming={isStreaming}
+        />
         <CitationPanel citations={extractCitations(activeContent || "")} />
       </div>
 
@@ -616,34 +640,216 @@ export default function AIAgentsPage() {
     try {
       if (collabMode) {
         /* Blackboard Pattern */
+        const { readSSE } = await import("@/lib/sse-reader");
         const res = await fetch("/api/ai/multi-agent-collab", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: content, history: historyForApi, sessionId, memoryContext: memCtx }),
+          body: JSON.stringify({ message: content, history: historyForApi, sessionId, memoryContext: memCtx, stream: true }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Gagal mendapat respons kolaborasi");
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Gagal mendapat respons kolaborasi");
+        }
 
-        stopEventStream();
+        const msgId = genId();
+        let routedContributions: Contribution[] = [];
+        let streamError: string | null = null;
+        let receivedDone = false;
+        let streamInterrupted = false;
 
-        // Track agents used
-        setSessionAgents(prev => {
-          const next = new Map(prev);
-          for (const c of (data.contributions || [])) {
-            const id = c.agent?.id as AgentId;
-            if (id) next.set(id, (next.get(id) || 0) + 1);
-          }
-          return next;
-        });
+        const buildContributions = (selections: CollabRoutingSelection[]): Contribution[] =>
+          selections.flatMap(selection => {
+            const agent = AGENTS[selection.agentId as AgentId];
+            if (!agent) return [];
+            return [{
+                agent: {
+                  ...agent,
+                  routing: {
+                    agentId: selection.agentId,
+                    confidence: selection.confidence ?? 0,
+                    reason: selection.reason ?? "",
+                  },
+                },
+                response: "",
+              } as Contribution];
+          });
 
-        const collabMsg: AgentMessage = {
-          id: genId(), role: "assistant",
-          content: data.synthesis || "",
-          collab: { contributions: data.contributions, synthesis: data.synthesis },
-          followups: data.followups,
-          timestamp: new Date(),
+        const updateCollabMessage = (updater: (message: AgentMessage) => AgentMessage) => {
+          setMessages(prev => {
+            const index = prev.findIndex(message => message.id === msgId);
+            const base: AgentMessage = {
+              id: msgId,
+              role: "assistant",
+              content: "",
+              isStreaming: true,
+              collab: { contributions: routedContributions, synthesis: "" },
+              timestamp: new Date(),
+            };
+            if (index === -1) return [...prev, updater(base)];
+            const next = [...prev];
+            next[index] = updater(next[index]);
+            return next;
+          });
         };
-        setMessages(prev => [...prev, collabMsg]);
+
+        const trackContributions = (contributions: Contribution[]) => {
+          setSessionAgents(prev => {
+            const next = new Map(prev);
+            for (const contribution of contributions) {
+              const id = contribution.agent?.id as AgentId;
+              if (id) next.set(id, (next.get(id) || 0) + 1);
+            }
+            return next;
+          });
+        };
+
+        const markStreamInterrupted = () => {
+          if (streamInterrupted) return;
+          streamInterrupted = true;
+          stopEventStream();
+          const interruptionNotice = "⚠️ **Koneksi streaming terputus**\n\nRespons mungkin belum lengkap. Silakan coba lagi.";
+
+          setMessages(prev => {
+            const index = prev.findIndex(message => message.id === msgId);
+            if (index === -1) {
+              return [...prev, {
+                id: msgId,
+                role: "assistant",
+                content: interruptionNotice,
+                timestamp: new Date(),
+              }];
+            }
+
+            const next = [...prev];
+            const message = next[index];
+            const collab = message.collab;
+            if (!collab) {
+              next[index] = { ...message, content: interruptionNotice, isStreaming: false };
+              return next;
+            }
+
+            const synthesis = collab.synthesis
+              ? `${collab.synthesis}\n\n> ⚠️ Koneksi terputus sebelum respons dikonfirmasi selesai.`
+              : interruptionNotice;
+            next[index] = {
+              ...message,
+              content: synthesis,
+              collab: { ...collab, synthesis, activeStreamTab: "synth" },
+              isStreaming: false,
+            };
+            return next;
+          });
+        };
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!res.body || !contentType.includes("text/event-stream")) {
+          // Backward-compatible JSON response for older servers/proxies.
+          const data = await res.json();
+          stopEventStream();
+          trackContributions(data.contributions || []);
+          const collabMsg: AgentMessage = {
+            id: msgId,
+            role: "assistant",
+            content: data.synthesis || "",
+            collab: { contributions: data.contributions || [], synthesis: data.synthesis || "" },
+            followups: data.followups,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, collabMsg]);
+        } else {
+          await readSSE(res.body, {
+            onChunk: () => {
+              // Collab data uses named events so each stream can be identified.
+            },
+            onEvent: (event, payload) => {
+              const data = payload as CollabSSEPayload;
+
+              if (event === "routing") {
+                routedContributions = buildContributions(data.agents || []);
+                stopEventStream();
+                updateCollabMessage(message => ({
+                  ...message,
+                  content: "",
+                  isStreaming: true,
+                  collab: { contributions: routedContributions, synthesis: "" },
+                }));
+              } else if (event === "contribution") {
+                const index = Number(data.index);
+                if (!Number.isInteger(index) || typeof data.chunk !== "string") return;
+                updateCollabMessage(message => {
+                  const collab = message.collab || { contributions: routedContributions, synthesis: "" };
+                  const contributions = collab.contributions.map((contribution, contributionIndex) =>
+                    contributionIndex === index
+                      ? { ...contribution, response: contribution.response + data.chunk }
+                      : contribution,
+                  );
+                  const activeStreamTab = collab.activeStreamTab
+                    || (index === 0 ? "0" : index === 1 ? "1" : undefined);
+                  return {
+                    ...message,
+                    content: collab.synthesis,
+                    collab: { ...collab, contributions, activeStreamTab },
+                    isStreaming: true,
+                  };
+                });
+              } else if (event === "synthesis") {
+                if (typeof data.chunk !== "string") return;
+                updateCollabMessage(message => {
+                  const collab = message.collab || { contributions: routedContributions, synthesis: "" };
+                  const synthesis = collab.synthesis + data.chunk;
+                  return {
+                    ...message,
+                    content: synthesis,
+                    collab: { ...collab, synthesis, activeStreamTab: "synth" },
+                    isStreaming: true,
+                  };
+                });
+              } else if (event === "synthesis-done") {
+                updateCollabMessage(message => ({ ...message, isStreaming: false }));
+              } else if (event === "done") {
+                receivedDone = true;
+                stopEventStream();
+                const contributions = data.contributions || routedContributions;
+                trackContributions(contributions);
+                updateCollabMessage(message => ({
+                  ...message,
+                  content: data.synthesis || "",
+                  collab: { contributions, synthesis: data.synthesis || "" },
+                  followups: data.followups || [],
+                  isStreaming: false,
+                }));
+              } else if (event === "error") {
+                streamError = data.error || "Gagal memproses kolaborasi multi-agent";
+                stopEventStream();
+                const errorContent = `⚠️ **Terjadi Kesalahan**\n\n${streamError}\n\nSilakan coba lagi.`;
+                updateCollabMessage(message => {
+                  const collab = message.collab || { contributions: routedContributions, synthesis: "" };
+                  const synthesis = collab.synthesis
+                    ? `${collab.synthesis}\n\n> ⚠️ ${streamError}`
+                    : errorContent;
+                  return {
+                    ...message,
+                    content: synthesis,
+                    collab: { ...collab, synthesis, activeStreamTab: "synth" },
+                    isStreaming: false,
+                  };
+                });
+              }
+            },
+            onDone: () => {
+              stopEventStream();
+              if (receivedDone || streamError) return;
+              markStreamInterrupted();
+            },
+          });
+
+          // Some proxies close a stream without forwarding [DONE]. Preserve
+          // partial text, but clearly mark it as interrupted rather than done.
+          if (!receivedDone && !streamError) {
+            markStreamInterrupted();
+          }
+          if (streamError) return;
+        }
 
       } else {
         /* Orchestrator-Worker Pattern — streaming specialist response */
@@ -1088,6 +1294,7 @@ export default function AIAgentsPage() {
                                 collab={msg.collab}
                                 followups={msg.followups}
                                 onFollowup={sendMessage}
+                                isStreaming={msg.isStreaming}
                               />
                               <div className="flex items-center gap-3 mt-1.5 ml-0.5">
                                 <span className="text-[10px] text-gray-400">{formatTime(msg.timestamp)}</span>
