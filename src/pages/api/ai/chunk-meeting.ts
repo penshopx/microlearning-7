@@ -22,6 +22,17 @@ type GeneratedMission = {
   mission: WorkplaceMission;
 };
 
+type SourceType = "meeting" | "document";
+
+const workplaceTrackLabels: Record<string, string> = {
+  construction: "Konstruksi",
+  "customer-service": "Customer Service",
+  sales: "Sales",
+  hr: "HR & People",
+  operations: "Operasional",
+  custom: "Bidang lain",
+};
+
 function createAuthenticatedClient(token: string): SupabaseClient<Database> | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -99,11 +110,18 @@ function parseGeneratedMissions(value: unknown, workplaceTrack: string): Generat
   });
 }
 
-async function generateMissionsFromMeeting(
-  meetingSource: string,
+async function generateMissionsFromSource(
+  sourceText: string,
+  sourceType: SourceType,
   workplaceTrack: string,
-  courseTitle: string
+  courseTitle: string,
+  sourceName?: string,
 ): Promise<GeneratedMission[]> {
+  const sourceLabel = sourceType === "meeting" ? "meeting" : "dokumen kerja (misalnya SOP, instruksi kerja, job description, atau kebijakan)";
+  const trackLabel = workplaceTrackLabels[workplaceTrack] || workplaceTrack;
+  const sourceHeading = sourceType === "document" && sourceName?.trim()
+    ? `Dokumen: ${sourceName.trim().slice(0, 200)}`
+    : `Sumber ${sourceType === "meeting" ? "meeting" : "dokumen kerja"}`;
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     response_format: { type: "json_object" },
@@ -111,7 +129,7 @@ async function generateMissionsFromMeeting(
     messages: [
       {
         role: "system",
-        content: `Kamu adalah workplace coach. Ubah isi meeting menjadi 2-4 misi kerja singkat yang harus dipraktikkan, bukan course atau modul belajar.
+        content: `Kamu adalah workplace coach. Ubah isi ${sourceLabel} menjadi 2-4 misi kerja singkat yang harus dipraktikkan, bukan course atau modul belajar.
 
 Kembalikan JSON valid dengan bentuk:
 {
@@ -156,15 +174,15 @@ Kembalikan JSON valid dengan bentuk:
   }]
 }
 
-Semua isi harus spesifik pada keputusan, action item, masalah, atau standar kerja yang benar-benar muncul dalam sumber meeting. Gunakan Bahasa Indonesia. Jangan menambahkan fakta yang tidak ada di sumber. Setiap misi harus dapat diselesaikan dalam 5-20 menit.`,
+        Semua isi harus spesifik pada keputusan, action item, masalah, prosedur, atau standar kerja yang benar-benar muncul dalam sumber. Gunakan Bahasa Indonesia. Jangan menambahkan fakta yang tidak ada di sumber. Setiap misi harus dapat diselesaikan dalam 5-20 menit. Jika sumber adalah SOP atau dokumen, pertahankan istilah, urutan prosedur, batasan, dan standar yang tertulis di dalamnya.`,
       },
       {
         role: "user",
         content: `Judul misi: ${courseTitle}
-Domain kerja: ${workplaceTrack}
+Domain kerja: ${trackLabel} (${workplaceTrack})
 
-Sumber meeting:
-${meetingSource.slice(0, 30000)}`,
+${sourceHeading}:
+${sourceText.slice(0, 30000)}`,
       },
     ],
   });
@@ -183,9 +201,18 @@ export default async function handler(
   }
 
   try {
-    const { courseId, workplaceTrack = "custom" } = req.body;
+    const {
+      courseId,
+      workplaceTrack = "custom",
+      sourceType = "meeting",
+      sourceText,
+      sourceName,
+    } = req.body || {};
     if (typeof courseId !== "string" || !courseId) {
       return res.status(400).json({ error: "Course ID required" });
+    }
+    if (sourceType !== "meeting" && sourceType !== "document") {
+      return res.status(400).json({ error: "Jenis sumber tidak valid" });
     }
 
     const authHeader = req.headers.authorization;
@@ -215,47 +242,61 @@ export default async function handler(
     if (course.user_id !== user.id) {
       return res.status(403).json({ error: "You cannot generate missions for this course" });
     }
-    if (!course.meeting_id) {
-      return res.status(422).json({ error: "Course is not connected to a meeting" });
-    }
+    let source = "";
+    if (sourceType === "document") {
+      if (typeof sourceText !== "string" || !sourceText.trim()) {
+        return res.status(422).json({ error: "Tempelkan isi dokumen atau unggah file teks terlebih dahulu" });
+      }
+      source = sourceText.trim();
+      if (source.length < 40) {
+        return res.status(422).json({ error: "Isi dokumen terlalu singkat. Masukkan minimal 40 karakter agar misi tetap kontekstual" });
+      }
+      if (source.length > 100 * 1024) {
+        return res.status(413).json({ error: "Isi dokumen terlalu panjang. Batasi sumber hingga 100 KB" });
+      }
+    } else {
+      if (!course.meeting_id) {
+        return res.status(422).json({ error: "Course is not connected to a meeting" });
+      }
 
-    const [{ data: meeting, error: meetingError }, { data: notes, error: notesError }] =
-      await Promise.all([
-        db
-          .from("meetings")
-          .select("id,title,host_id,ai_summary,action_items,transcription_data,key_moments")
-          .eq("id", course.meeting_id)
-          .single(),
-        db
-          .from("ai_meeting_notes")
-          .select("text,note_type,speaker_name,timestamp")
-          .eq("meeting_id", course.meeting_id)
-          .order("timestamp", { ascending: true }),
-      ]);
+      const [{ data: meeting, error: meetingError }, { data: notes, error: notesError }] =
+        await Promise.all([
+          db
+            .from("meetings")
+            .select("id,title,host_id,ai_summary,action_items,transcription_data,key_moments")
+            .eq("id", course.meeting_id)
+            .single(),
+          db
+            .from("ai_meeting_notes")
+            .select("text,note_type,speaker_name,timestamp")
+            .eq("meeting_id", course.meeting_id)
+            .order("timestamp", { ascending: true }),
+        ]);
 
-    if (meetingError || !meeting) {
-      return res.status(404).json({ error: "Source meeting not found" });
-    }
-    if (!meeting.host_id || meeting.host_id !== user.id) {
-      return res.status(403).json({ error: "You cannot use this meeting as a mission source" });
-    }
-    if (notesError) throw notesError;
+      if (meetingError || !meeting) {
+        return res.status(404).json({ error: "Source meeting not found" });
+      }
+      if (!meeting.host_id || meeting.host_id !== user.id) {
+        return res.status(403).json({ error: "You cannot use this meeting as a mission source" });
+      }
+      if (notesError) throw notesError;
 
-    const sourceParts = [
-      meeting.ai_summary,
-      stringifySource(meeting.transcription_data),
-      stringifySource(meeting.action_items),
-      stringifySource(meeting.key_moments),
-      ...(notes || []).map((note) =>
-        `[${note.timestamp}] ${note.speaker_name || "Peserta"} (${note.note_type || "catatan"}): ${note.text}`
-      ),
-    ].filter((part): part is string => Boolean(part?.trim()));
+      const sourceParts = [
+        meeting.ai_summary,
+        stringifySource(meeting.transcription_data),
+        stringifySource(meeting.action_items),
+        stringifySource(meeting.key_moments),
+        ...(notes || []).map((note) =>
+          `[${note.timestamp}] ${note.speaker_name || "Peserta"} (${note.note_type || "catatan"}): ${note.text}`
+        ),
+      ].filter((part): part is string => Boolean(part?.trim()));
 
-    const meetingSource = sourceParts.join("\n\n");
-    if (meetingSource.length < 40) {
-      return res.status(422).json({
-        error: "Meeting belum memiliki transkrip atau catatan yang cukup untuk membuat misi",
-      });
+      source = sourceParts.join("\n\n");
+      if (source.length < 40) {
+        return res.status(422).json({
+          error: "Meeting belum memiliki transkrip atau catatan yang cukup untuk membuat misi",
+        });
+      }
     }
 
     const { data: existingModules, error: existingModulesError } = await db
@@ -269,19 +310,23 @@ export default async function handler(
     }
 
     const track = typeof workplaceTrack === "string" ? workplaceTrack : "custom";
-    const generated = await generateMissionsFromMeeting(
-      meetingSource,
+    const generated = await generateMissionsFromSource(
+      source,
+      sourceType,
       track,
-      course.title
+      course.title,
+      typeof sourceName === "string" ? sourceName : undefined,
     );
 
-    const { data: recording } = await db
-      .from("meeting_recordings")
-      .select("recording_url")
-      .eq("meeting_id", course.meeting_id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: recording } = sourceType === "meeting" && course.meeting_id
+      ? await db
+          .from("meeting_recordings")
+          .select("recording_url")
+          .eq("meeting_id", course.meeting_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
 
     const result = await persistMissions(
       db,
@@ -292,20 +337,20 @@ export default async function handler(
 
     return res.status(200).json({
       success: true,
-      message: "Meeting berhasil diubah menjadi workplace missions",
+      message: `${sourceType === "meeting" ? "Meeting" : "Dokumen"} berhasil diubah menjadi workplace missions`,
       missionContractVersion: WORKPLACE_MISSION_VERSION,
       modulesCreated: result.modules.length,
       modules: result.modules,
       missions: result.missions,
     });
   } catch (error) {
-    console.error("Meeting to mission error:", error);
+    console.error("Source to mission error:", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);
     }
     return res.status(500).json({
-      error: "Failed to create missions from meeting",
+      error: "Failed to create missions from source",
       details: error instanceof Error ? error.message : "Unknown error",
     });
   }

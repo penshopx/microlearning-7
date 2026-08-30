@@ -23,15 +23,32 @@ type _ModuleContent = Database["public"]["Tables"]["module_content"]["Row"];
 type _ModuleQuiz = Database["public"]["Tables"]["module_quizzes"]["Row"];
 type _LearnerProgress = Database["public"]["Tables"]["learner_progress"]["Row"];
 
+export type MissionSource =
+  | {
+      type: "meeting";
+      meetingId: string;
+      recordingUrl?: string;
+    }
+  | {
+      type: "document";
+      text: string;
+      fileName?: string;
+    };
+
 /**
  * Micro-Learning Service
  * Handles course creation, module management, and learner progress
  */
 export const microLearningService = {
   /**
-   * Create course from meeting recording
+   * Create a mission container from either a meeting or a document source.
    */
-  async createCourseFromMeeting(meetingId: string, title: string, description?: string) {
+  async createCourseFromSource(
+    sourceType: MissionSource["type"],
+    title: string,
+    description?: string,
+    meetingId?: string,
+  ) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
 
@@ -39,7 +56,7 @@ export const microLearningService = {
       .from("courses")
       .insert({
         user_id: user.id,
-        meeting_id: meetingId,
+        meeting_id: sourceType === "meeting" ? meetingId || null : null,
         title,
         description,
       })
@@ -50,11 +67,18 @@ export const microLearningService = {
   },
 
   /**
-   * Chunk meeting into micro-learning modules (5-7 minutes each)
+   * Backwards-compatible meeting course creation helper.
    */
-  async chunkMeetingIntoModules(
+  async createCourseFromMeeting(meetingId: string, title: string, description?: string) {
+    return this.createCourseFromSource("meeting", title, description, meetingId);
+  },
+
+  /**
+   * Turn a meeting or document into practice-based missions.
+   */
+  async chunkSourceIntoModules(
     courseId: string,
-    meetingRecordingUrl: string,
+    source: MissionSource,
     workplaceTrack: string = "construction"
   ) {
     try {
@@ -69,7 +93,11 @@ export const microLearningService = {
         },
         body: JSON.stringify({
           courseId,
-          recordingUrl: meetingRecordingUrl,
+          sourceType: source.type,
+          meetingId: source.type === "meeting" ? source.meetingId : undefined,
+          sourceText: source.type === "document" ? source.text : undefined,
+          sourceName: source.type === "document" ? source.fileName : undefined,
+          recordingUrl: source.type === "meeting" ? source.recordingUrl : undefined,
           workplaceTrack,
         }),
       });
@@ -78,13 +106,28 @@ export const microLearningService = {
       if (!response.ok) {
         return {
           data: null,
-          error: new Error(result?.error || "Gagal membuat misi dari meeting"),
+          error: new Error(result?.error || "Gagal membuat misi dari sumber"),
         };
       }
       return { data: result, error: null };
     } catch (error) {
       return { data: null, error };
     }
+  },
+
+  /**
+   * Backwards-compatible meeting chunking helper.
+   */
+  async chunkMeetingIntoModules(
+    courseId: string,
+    meetingRecordingUrl: string,
+    workplaceTrack: string = "construction"
+  ) {
+    return this.chunkSourceIntoModules(
+      courseId,
+      { type: "meeting", meetingId: "", recordingUrl: meetingRecordingUrl },
+      workplaceTrack,
+    );
   },
 
   /**

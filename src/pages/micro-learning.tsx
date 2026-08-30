@@ -48,6 +48,9 @@ import {
   MessageSquareText,
   Repeat2,
   ShieldCheck,
+  FileText,
+  Upload,
+  X,
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -196,7 +199,10 @@ export default function MicroLearning() {
   const [activeTab, setActiveTab] = useState("create");
   const [courses, setCourses] = useState<Course[]>([]);
   const [meetings, setMeetings] = useState<any[]>([]);
+  const [sourceType, setSourceType] = useState<"meeting" | "document">("meeting");
   const [selectedMeeting, setSelectedMeeting] = useState<string>("");
+  const [sourceText, setSourceText] = useState("");
+  const [sourceFileName, setSourceFileName] = useState("");
   const [courseTitle, setCourseTitle] = useState("");
   const [courseDescription, setCourseDescription] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -269,11 +275,87 @@ export default function MicroLearning() {
     return `Rp ${price.toLocaleString("id-ID")}`;
   };
 
-  const handleCreateCourse = async () => {
-    if (!selectedMeeting || !courseTitle.trim()) {
+  const handleDocumentFile = async (file?: File) => {
+    if (!file) return;
+
+    const extension = file.name.includes(".")
+      ? `.${file.name.split(".").pop()?.toLowerCase()}`
+      : "";
+    const allowedExtensions = [".txt", ".md", ".csv", ".json"];
+    const allowedMimeTypes = ["text/plain", "text/markdown", "text/csv", "application/json"];
+    if (!allowedExtensions.includes(extension) && !allowedMimeTypes.includes(file.type)) {
+      setSourceFileName("");
+      setSourceText("");
       toast({
-        title: "Missing Information",
-        description: "Please select a meeting and enter a course title",
+        title: "Format file tidak didukung",
+        description: "Gunakan file .txt, .md, .csv, atau .json. Untuk PDF/Word, salin teksnya ke kolom di bawah.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (file.size > 100 * 1024) {
+      setSourceFileName("");
+      setSourceText("");
+      toast({
+        title: "File terlalu besar",
+        description: "Ukuran file maksimal 100 KB agar konteks dapat diproses dengan baik.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const text = (await file.text()).trim();
+      if (!text) {
+        setSourceFileName("");
+        setSourceText("");
+        toast({
+          title: "File kosong",
+          description: "File tidak memiliki isi teks. Pilih file lain atau tempelkan sumber secara manual.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setSourceText(text);
+      setSourceFileName(file.name);
+    } catch (error) {
+      console.error("Failed to read source file:", error);
+      setSourceFileName("");
+      setSourceText("");
+      toast({
+        title: "File tidak bisa dibaca",
+        description: "Coba file teks lain atau tempelkan isi dokumen secara manual.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreateCourse = async () => {
+    const hasSource = sourceType === "meeting"
+      ? Boolean(selectedMeeting)
+      : Boolean(sourceText.trim());
+    if (!hasSource || !courseTitle.trim()) {
+      toast({
+        title: "Sumber atau judul belum lengkap",
+        description: sourceType === "meeting"
+          ? "Pilih meeting dan masukkan judul misi."
+          : "Unggah atau tempelkan isi dokumen, lalu masukkan judul misi.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (sourceType === "document" && sourceText.trim().length < 40) {
+      toast({
+        title: "Isi dokumen terlalu singkat",
+        description: "Masukkan minimal 40 karakter agar AI memiliki konteks yang cukup.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (sourceType === "document" && sourceText.length > 100 * 1024) {
+      toast({
+        title: "Isi dokumen terlalu panjang",
+        description: "Batasi sumber hingga 100 KB sebelum membuat misi.",
         variant: "destructive",
       });
       return;
@@ -290,27 +372,38 @@ export default function MicroLearning() {
       ]
         .filter(Boolean)
         .join("\n\n");
-      const { data: course, error: courseError } = await microLearningService.createCourseFromMeeting(
-        selectedMeeting,
+      const { data: course, error: courseError } = await microLearningService.createCourseFromSource(
+        sourceType,
         courseTitle,
-        contextualDescription
+        contextualDescription,
+        sourceType === "meeting" ? selectedMeeting : undefined,
       );
 
-      if (courseError || !course) throw courseError;
+      if (courseError || !course) throw courseError || new Error("Misi tidak dapat dibuat");
 
       toast({
         title: "Misi disiapkan",
-        description: "AI sedang menyusun langkah praktik dari isi meeting...",
+        description: `AI sedang menyusun langkah praktik dari ${sourceType === "meeting" ? "isi meeting" : "dokumen"}...`,
       });
 
-      // Step 2: Chunk meeting into modules
-      const meeting = meetings.find(m => m.id === selectedMeeting);
-      const recordingUrl = meeting?.recording_url || "https://placeholder.com/recording.mp4";
-
-      const { data: modules, error: chunkError } = await microLearningService.chunkMeetingIntoModules(
+      // Step 2: Turn the selected source into practice modules
+      const meeting = sourceType === "meeting"
+        ? meetings.find(m => m.id === selectedMeeting)
+        : undefined;
+      const { data: modules, error: chunkError } = await microLearningService.chunkSourceIntoModules(
         course.id,
-        recordingUrl,
-        selectedTrack
+        sourceType === "meeting"
+          ? {
+              type: "meeting",
+              meetingId: selectedMeeting,
+              recordingUrl: meeting?.recording_url,
+            }
+          : {
+              type: "document",
+              text: sourceText,
+              fileName: sourceFileName || undefined,
+            },
+        selectedTrack,
       );
 
       if (chunkError) throw chunkError;
@@ -326,13 +419,17 @@ export default function MicroLearning() {
 
       // Reset form
       setSelectedMeeting("");
+      setSourceText("");
+      setSourceFileName("");
       setCourseTitle("");
       setCourseDescription("");
     } catch (error) {
       console.error("Course creation error:", error);
       toast({
-        title: "Creation Failed",
-        description: "Failed to create course. Please try again.",
+        title: "Misi belum berhasil dibuat",
+        description: error instanceof Error
+          ? error.message
+          : "Periksa sumber dan koneksi, lalu coba lagi.",
         variant: "destructive",
       });
     } finally {
@@ -419,7 +516,7 @@ export default function MicroLearning() {
                   className="bg-blue-500 text-white hover:bg-blue-400"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Buat misi dari meeting
+                  Buat misi dari meeting atau dokumen
                 </Button>
                 <Button
                   variant="outline"
@@ -656,13 +753,14 @@ export default function MicroLearning() {
                     <ClipboardCheck className="w-6 h-6 text-blue-300" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-white">Buat misi dari meeting</h2>
-                    <p className="text-sm text-blue-200 mt-1">Meeting-to-Mission</p>
+                    <h2 className="text-2xl font-bold text-white">Buat misi dari sumber kerja</h2>
+                    <p className="text-sm text-blue-200 mt-1">Meeting, SOP, dan dokumen kerja → praktik nyata</p>
                   </div>
                 </div>
                 <p className="text-gray-300 mb-6">
-                  Pilih rekaman meeting. AI akan mengambil keputusan dan konteks penting, lalu
-                  mengubahnya menjadi latihan 5–15 menit yang relevan untuk pekerjaan tim.
+                  Pilih rekaman meeting atau gunakan SOP, instruksi kerja, job description, dan
+                  kebijakan. AI akan menjaga konteks domain, lalu mengubah sumber tersebut menjadi
+                  misi praktik 5–15 menit dengan bukti dan feedback yang sama.
                 </p>
 
                 {/* Feature Preview */}
@@ -670,7 +768,7 @@ export default function MicroLearning() {
                   <div className="p-4 bg-white/5 rounded-lg border border-white/10">
                     <Video className="w-8 h-8 text-blue-400 mb-2" />
                     <h3 className="text-white font-semibold">Tarik konteks</h3>
-                    <p className="text-sm text-gray-400">Keputusan dan risiko meeting</p>
+                    <p className="text-sm text-gray-400">Meeting, SOP, atau standar kerja</p>
                   </div>
                   <div className="p-4 bg-white/5 rounded-lg border border-white/10">
                     <BookOpen className="w-8 h-8 text-green-400 mb-2" />
@@ -709,21 +807,129 @@ export default function MicroLearning() {
                     </p>
                   </div>
                   <div>
-                    <Label className="text-white mb-2">Rekaman meeting:</Label>
-                    <select
-                      className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white"
-                      value={selectedMeeting}
-                      onChange={(e) => setSelectedMeeting(e.target.value)}
-                    >
-                      <option value="">Choose a meeting...</option>
-                      {meetings.map((meeting) => (
-                        <option key={meeting.id} value={meeting.id}>
-                          {meeting.title || `Meeting ${meeting.meeting_code}`} -{" "}
-                          {new Date(meeting.created_at).toLocaleDateString()}
-                        </option>
-                      ))}
-                    </select>
+                    <Label className="text-white mb-2">Sumber misi:</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="tablist" aria-label="Jenis sumber misi">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sourceType === "meeting"}
+                        onClick={() => setSourceType("meeting")}
+                        className={`flex items-start gap-3 rounded-xl border p-4 text-left transition ${
+                          sourceType === "meeting"
+                            ? "border-blue-400 bg-blue-400/15 text-white"
+                            : "border-white/15 bg-white/5 text-slate-300 hover:bg-white/10"
+                        }`}
+                      >
+                        <Video className="mt-0.5 h-5 w-5 shrink-0 text-blue-300" />
+                        <span>
+                          <span className="block font-semibold">Rekaman meeting</span>
+                          <span className="mt-1 block text-xs text-slate-400">Gunakan transkrip dan catatan meeting</span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={sourceType === "document"}
+                        onClick={() => setSourceType("document")}
+                        className={`flex items-start gap-3 rounded-xl border p-4 text-left transition ${
+                          sourceType === "document"
+                            ? "border-blue-400 bg-blue-400/15 text-white"
+                            : "border-white/15 bg-white/5 text-slate-300 hover:bg-white/10"
+                        }`}
+                      >
+                        <FileText className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+                        <span>
+                          <span className="block font-semibold">SOP atau dokumen kerja</span>
+                          <span className="mt-1 block text-xs text-slate-400">Unggah file teks atau tempelkan isi</span>
+                        </span>
+                      </button>
+                    </div>
                   </div>
+
+                  {sourceType === "meeting" ? (
+                    <div>
+                      <Label htmlFor="meeting-source" className="text-white mb-2">Rekaman meeting:</Label>
+                      <select
+                        id="meeting-source"
+                        className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white"
+                        value={selectedMeeting}
+                        onChange={(e) => setSelectedMeeting(e.target.value)}
+                      >
+                        <option value="">Pilih meeting...</option>
+                        {meetings.map((meeting) => (
+                          <option key={meeting.id} value={meeting.id}>
+                            {meeting.title || `Meeting ${meeting.meeting_code}`} -{" "}
+                            {new Date(meeting.created_at).toLocaleDateString("id-ID")}
+                          </option>
+                        ))}
+                      </select>
+                      {meetings.length === 0 && (
+                        <p className="mt-2 text-xs text-amber-200">
+                          Belum ada meeting yang bisa dipakai. Pilih sumber dokumen untuk membuat misi dari SOP.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4">
+                      <div>
+                        <Label htmlFor="mission-document" className="text-white mb-2">Unggah file teks (opsional):</Label>
+                        <label
+                          htmlFor="mission-document"
+                          className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-white/25 bg-white/5 px-4 py-3 text-sm text-slate-200 transition hover:bg-white/10"
+                        >
+                          <Upload className="h-4 w-4 text-emerald-300" />
+                          Pilih .txt, .md, .csv, atau .json
+                        </label>
+                        <input
+                          id="mission-document"
+                          type="file"
+                          accept=".txt,.md,.csv,.json,text/plain,text/markdown,text/csv,application/json"
+                          className="sr-only"
+                          onChange={(event) => {
+                            void handleDocumentFile(event.target.files?.[0]);
+                            event.currentTarget.value = "";
+                          }}
+                        />
+                        {sourceFileName && (
+                          <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-slate-300">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+                              <span className="truncate">{sourceFileName}</span>
+                            </span>
+                            <button
+                              type="button"
+                              aria-label="Hapus file sumber"
+                              onClick={() => {
+                                setSourceFileName("");
+                                setSourceText("");
+                              }}
+                              className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <Label htmlFor="mission-source-text" className="text-white mb-2">Atau tempelkan isi dokumen:</Label>
+                        <textarea
+                          id="mission-source-text"
+                          placeholder="Tempelkan SOP, instruksi kerja, job description, atau kebijakan di sini..."
+                          value={sourceText}
+                          onChange={(e) => {
+                            setSourceText(e.target.value);
+                            if (sourceFileName) setSourceFileName("");
+                          }}
+                          className="h-36 w-full rounded-lg border border-white/20 bg-white/10 p-3 text-white placeholder:text-slate-500"
+                          aria-describedby="mission-source-help"
+                        />
+                        <div id="mission-source-help" className="mt-1 flex justify-between gap-3 text-xs text-slate-400">
+                          <span>Minimal 40 karakter. Maksimal 100 KB.</span>
+                          <span>{sourceText.length.toLocaleString("id-ID")} karakter</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <Label className="text-white mb-2">Judul misi:</Label>
@@ -738,7 +944,9 @@ export default function MicroLearning() {
                   <div>
                     <Label className="text-white mb-2">Konteks atau tujuan (opsional):</Label>
                     <textarea
-                      placeholder="Skill apa yang perlu dipraktikkan setelah meeting ini?"
+                      placeholder={sourceType === "meeting"
+                        ? "Skill apa yang perlu dipraktikkan setelah meeting ini?"
+                        : "Tujuan praktik apa yang ingin dikuatkan dari dokumen ini?"}
                       value={courseDescription}
                       onChange={(e) => setCourseDescription(e.target.value)}
                       className="w-full p-3 bg-white/10 border border-white/20 rounded-lg text-white h-24"
@@ -747,7 +955,7 @@ export default function MicroLearning() {
 
                   <Button
                     onClick={handleCreateCourse}
-                    disabled={isProcessing || !selectedMeeting || !courseTitle}
+                    disabled={isProcessing || !courseTitle.trim() || (sourceType === "meeting" ? !selectedMeeting : !sourceText.trim())}
                     className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
                     size="lg"
                   >
