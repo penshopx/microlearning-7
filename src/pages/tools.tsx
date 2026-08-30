@@ -10,7 +10,15 @@ const FAVS_KEY = "chaesa_fav_tools_v1";
 const MAX_RECENTS = 6;
 
 /* ── Markdown renderer (reuses chat pattern) ─────── */
-function MarkdownOutput({ text }: { text: string }) {
+function TypingCursor({ className }: { className: string }) {
+  return (
+    <span aria-hidden="true" className={`inline-block ml-1 select-none animate-pulse ${className}`}>
+      ▋
+    </span>
+  );
+}
+
+function MarkdownOutput({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
   let i = 0;
@@ -63,7 +71,12 @@ function MarkdownOutput({ text }: { text: string }) {
     else { elements.push(<p key={i} className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{formatInline(line)}</p>); }
     i++;
   }
-  return <div className="space-y-0.5">{elements}</div>;
+  return (
+    <div className="space-y-0.5">
+      {elements}
+      {isStreaming && <TypingCursor className="text-green-500" />}
+    </div>
+  );
 }
 
 /* ── Tool Card ───────────────────────────────────── */
@@ -171,6 +184,7 @@ export default function ToolsPage() {
   const [selectedTool, setSelectedTool] = useState<AiTool | null>(null);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [output, setOutput] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -222,6 +236,7 @@ export default function ToolsPage() {
     setSelectedTool(tool);
     setFormData({});
     setOutput(null);
+    setIsStreaming(false);
     setError(null);
     trackRecent(tool);
   }
@@ -229,6 +244,7 @@ export default function ToolsPage() {
   function closeTool() {
     setSelectedTool(null);
     setOutput(null);
+    setIsStreaming(false);
     setError(null);
   }
 
@@ -247,6 +263,7 @@ export default function ToolsPage() {
     if (!selectedTool || !isFormValid()) return;
     setLoading(true);
     setOutput(null);
+    setIsStreaming(false);
     setError(null);
     try {
       const { readSSE } = await import("@/lib/sse-reader");
@@ -262,19 +279,25 @@ export default function ToolsPage() {
       }
 
       setOutput(""); // show output panel immediately
+      setIsStreaming(true);
       await readSSE(res.body, {
         onChunk: (chunk) => setOutput(prev => (prev ?? "") + chunk),
         onEvent: (event, payload) => {
-          if (event === "error") {
+          if (event === "done") {
+            setIsStreaming(false);
+          } else if (event === "error") {
+            setIsStreaming(false);
             setError((payload as { error: string }).error);
             setOutput(null);
           }
         },
         onDone: () => {
+          setIsStreaming(false);
           setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         },
       });
     } catch (err) {
+      setIsStreaming(false);
       setError(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
       setLoading(false);
@@ -701,7 +724,7 @@ export default function ToolsPage() {
 
                       {/* Output body */}
                       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4">
-                        <MarkdownOutput text={output} />
+                        <MarkdownOutput text={output} isStreaming={isStreaming} />
                       </div>
 
                       {/* Action footer */}

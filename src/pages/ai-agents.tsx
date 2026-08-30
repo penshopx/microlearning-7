@@ -40,6 +40,7 @@ interface AgentMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  isStreaming?: boolean;
   agent?: AgentInfo;
   followups?: string[];
   routing?: { reason: string; confidence: number; manual: boolean };
@@ -112,7 +113,15 @@ function inlineFormat(text: string): React.ReactNode[] {
   });
 }
 
-function MarkdownContent({ text }: { text: string }) {
+function TypingCursor() {
+  return (
+    <span aria-hidden="true" className="inline-block ml-1 select-none text-purple-500 animate-pulse">
+      ▋
+    </span>
+  );
+}
+
+function MarkdownContent({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
   let i = 0;
@@ -149,7 +158,12 @@ function MarkdownContent({ text }: { text: string }) {
     elements.push(<p key={`p${i}`} className="text-sm leading-relaxed">{inlineFormat(line)}</p>);
     i++;
   }
-  return <div className="space-y-0.5 text-gray-700 dark:text-gray-300">{elements}</div>;
+  return (
+    <div className="space-y-0.5 text-gray-700 dark:text-gray-300">
+      {elements}
+      {isStreaming && <TypingCursor />}
+    </div>
+  );
 }
 
 /* ── Citation components (inspired by scite.ai) ────── */
@@ -656,6 +670,7 @@ export default function AIAgentsPage() {
               setMessages(prev => [...prev, {
                 id: msgId, role: "assistant",
                 content: chunk,
+                isStreaming: true,
                 timestamp: new Date(),
               }]);
             } else {
@@ -681,6 +696,7 @@ export default function AIAgentsPage() {
                 return [...prev.slice(0, -1), {
                   ...last,
                   agent: meta.agent,
+                  isStreaming: false,
                   followups: meta.followups,
                   routing: meta.routing,
                 }];
@@ -691,20 +707,28 @@ export default function AIAgentsPage() {
               const errContent = `⚠️ **Terjadi Kesalahan**\n\n${errPayload.error}\n\nSilakan coba lagi.`;
               setMessages(prev => {
                 const last = prev[prev.length - 1];
-                if (last?.id === msgId) return [...prev.slice(0, -1), { ...last, content: errContent }];
+                if (last?.id === msgId) return [...prev.slice(0, -1), { ...last, content: errContent, isStreaming: false }];
                 return [...prev, { id: genId(), role: "assistant", content: errContent, timestamp: new Date() }];
               });
             }
           },
           onDone: () => {
             stopEventStream();
-            if (isFirstChunk) {
-              setMessages(prev => [...prev, {
-                id: msgId, role: "assistant",
-                content: "Maaf, saya tidak dapat memproses permintaan ini saat ini.",
-                timestamp: new Date(),
-              }]);
-            }
+            setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last?.id === msgId) {
+                return [...prev.slice(0, -1), { ...last, isStreaming: false }];
+              }
+              if (isFirstChunk) {
+                return [...prev, {
+                  id: msgId, role: "assistant",
+                  content: "Maaf, saya tidak dapat memproses permintaan ini saat ini.",
+                  isStreaming: false,
+                  timestamp: new Date(),
+                }];
+              }
+              return prev;
+            });
           },
         });
       }
@@ -1101,7 +1125,7 @@ export default function AIAgentsPage() {
                           <div className="w-7 h-7 rounded-full flex items-center justify-center text-base shrink-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">{ag?.icon || "🤖"}</div>
                           <div className="flex-1 min-w-0">
                             <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-sm px-4 py-4 shadow-sm">
-                              <MarkdownContent text={msg.content} />
+                               <MarkdownContent text={msg.content} isStreaming={msg.isStreaming} />
                               <CitationPanel citations={extractCitations(msg.content)} />
                             </div>
                             {msg.followups && msg.followups.length > 0 && (
