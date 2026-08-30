@@ -154,6 +154,41 @@ const sectorPlaybooks = [
   },
 ];
 
+const operatingRoles = [
+  {
+    role: "Pengarah",
+    actor: "Pemilik bisnis atau pimpinan fungsi",
+    action: "Menentukan prioritas perilaku dan standar yang perlu diperkuat.",
+    output: "Arah skill dan indikator dampak",
+    icon: Target,
+    tone: "text-blue-300",
+  },
+  {
+    role: "Perancang",
+    actor: "L&D, coach, atau team lead",
+    action: "Mengubah konteks kerja menjadi misi yang sesuai peran dan sektor.",
+    output: "Misi, skenario, dan kriteria bukti",
+    icon: Sparkles,
+    tone: "text-violet-300",
+  },
+  {
+    role: "Pelaksana",
+    actor: "Anggota tim di lapangan",
+    action: "Melakukan tindakan, mengirim bukti, dan menulis refleksi singkat.",
+    output: "Praktik yang terlihat dan dapat dipelajari",
+    icon: ClipboardCheck,
+    tone: "text-emerald-300",
+  },
+  {
+    role: "Pengelola kebiasaan",
+    actor: "Supervisor atau pengelola tim",
+    action: "Membaca pola, memberi feedback, dan mengatur pengulangan misi.",
+    output: "Perbaikan individu dan pembelajaran tim",
+    icon: BarChart3,
+    tone: "text-amber-300",
+  },
+];
+
 export default function MicroLearning() {
   const router = useRouter();
   const { toast } = useToast();
@@ -556,6 +591,37 @@ export default function MicroLearning() {
                     <p className="mt-1 text-sm font-medium leading-relaxed text-blue-100">{playbook.mission}</p>
                     <p className="mt-3 text-xs uppercase tracking-wider text-slate-500">Bukti</p>
                     <p className="mt-1 text-sm text-emerald-200">{playbook.proof}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card className="border-white/10 bg-slate-950/60 p-6 md:p-8">
+              <div className="mb-5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Dimensi peran</p>
+                <h2 className="mt-1 text-xl font-bold text-white md:text-2xl">Empat peran agar praktik bergerak</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-400">
+                  Satu sistem dapat dipakai bersama tanpa membuat semua orang menjadi admin. Setiap peran
+                  memiliki keputusan, tindakan, dan keluaran yang berbeda.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {operatingRoles.map((item) => (
+                  <div key={item.role} className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-white/[0.08] p-2">
+                        <item.icon className={`h-5 w-5 ${item.tone}`} />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-white">{item.role}</h3>
+                        <p className="text-xs text-slate-500">{item.actor}</p>
+                      </div>
+                    </div>
+                    <p className="mt-4 text-sm leading-relaxed text-slate-300">{item.action}</p>
+                    <div className="mt-4 border-t border-white/10 pt-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Keluaran</p>
+                      <p className="mt-1 text-sm font-medium text-blue-100">{item.output}</p>
+                    </div>
                   </div>
                 ))}
               </div>
