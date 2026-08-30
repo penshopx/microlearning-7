@@ -36,7 +36,11 @@ export const microLearningService = {
   /**
    * Chunk meeting into micro-learning modules (5-7 minutes each)
    */
-  async chunkMeetingIntoModules(courseId: string, meetingRecordingUrl: string) {
+  async chunkMeetingIntoModules(
+    courseId: string,
+    meetingRecordingUrl: string,
+    workplaceTrack: string = "construction"
+  ) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
@@ -50,6 +54,7 @@ export const microLearningService = {
         body: JSON.stringify({
           courseId,
           recordingUrl: meetingRecordingUrl,
+          workplaceTrack,
         }),
       });
 
@@ -153,7 +158,37 @@ export const microLearningService = {
 
     if (modulesError) return { data: null, error: modulesError };
 
-    return { data: { course, modules }, error: null };
+    const moduleIds = modules.map((module) => module.id);
+
+    if (moduleIds.length === 0) {
+      return { data: { course, modules: [] }, error: null };
+    }
+
+    const [{ data: content, error: contentError }, { data: quizzes, error: quizzesError }] =
+      await Promise.all([
+        supabase
+          .from("module_content")
+          .select("*")
+          .in("module_id", moduleIds)
+          .order("order_index", { ascending: true }),
+        supabase
+          .from("module_quizzes")
+          .select("*")
+          .in("module_id", moduleIds)
+          .order("question_number", { ascending: true }),
+      ]);
+
+    if (contentError || quizzesError) {
+      return { data: null, error: contentError || quizzesError };
+    }
+
+    const hydratedModules = modules.map((module) => ({
+      ...module,
+      content: (content || []).filter((item) => item.module_id === module.id),
+      quizzes: (quizzes || []).filter((item) => item.module_id === module.id),
+    }));
+
+    return { data: { course, modules: hydratedModules }, error: null };
   },
 
   /**
@@ -209,7 +244,13 @@ export const microLearningService = {
         user_id: user.id,
         course_id: courseId,
         module_id: moduleId,
-        ...progressData,
+        status: progressData.status,
+        progress_percentage: progressData.progressPercentage,
+        time_spent_seconds: progressData.timeSpentSeconds,
+        last_position_seconds: progressData.lastPositionSeconds,
+        quiz_score: progressData.quizScore,
+        completed_at:
+          progressData.status === "completed" ? new Date().toISOString() : undefined,
         updated_at: new Date().toISOString(),
       })
       .select()

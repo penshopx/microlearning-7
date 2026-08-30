@@ -183,7 +183,8 @@ export default function MicroLearning() {
 
       const { data: modules, error: chunkError } = await microLearningService.chunkMeetingIntoModules(
         course.id,
-        recordingUrl
+        recordingUrl,
+        selectedTrack
       );
 
       if (chunkError) throw chunkError;

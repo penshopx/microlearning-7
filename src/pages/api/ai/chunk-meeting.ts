@@ -22,7 +22,7 @@ export default async function handler(
   }
 
   try {
-    const { courseId, recordingUrl } = req.body;
+    const { courseId, recordingUrl, workplaceTrack = "construction" } = req.body;
 
     if (!courseId || !recordingUrl) {
       return res.status(400).json({ error: "Course ID and recording URL required" });
@@ -58,14 +58,17 @@ export default async function handler(
     //   }]
     // });
 
-    // For MVP: Simulate chunking (creates 8 modules from 1 hour meeting)
-    const simulatedChunks = await simulateChunking(courseId, user.id);
+    const missions = await buildWorkplaceMissions(
+      courseId,
+      recordingUrl,
+      typeof workplaceTrack === "string" ? workplaceTrack : "construction"
+    );
 
     return res.status(200).json({
       success: true,
-      message: "Meeting successfully chunked into micro-learning modules",
-      modulesCreated: simulatedChunks.length,
-      modules: simulatedChunks,
+      message: "Meeting berhasil diubah menjadi workplace missions",
+      modulesCreated: missions.length,
+      modules: missions,
     });
   } catch (error) {
     console.error("Meeting Chunking Error:", error);
@@ -77,19 +80,91 @@ export default async function handler(
 }
 
 /**
- * Simulate AI chunking for MVP
- * In production, this would use actual AI to detect topic changes
+ * Builds a practical mission structure while preserving the existing course/module schema.
+ * The mission blueprint is stored in module_content.content_data as a worksheet.
  */
-async function simulateChunking(courseId: string, userId: string) {
+async function buildWorkplaceMissions(
+  courseId: string,
+  recordingUrl: string,
+  workplaceTrack: string
+) {
+  const profiles: Record<string, {
+    label: string;
+    skill: string;
+    action: string;
+    evidence: string;
+    scenario: string;
+  }> = {
+    construction: {
+      label: "Konstruksi",
+      skill: "mengidentifikasi risiko sebelum pekerjaan dimulai",
+      action: "lakukan pemeriksaan singkat pada satu area kerja menggunakan checklist",
+      evidence: "foto kondisi lapangan dan checklist yang sudah diisi",
+      scenario: "Kamu menemukan kondisi yang berbeda dari rencana kerja sesaat sebelum aktivitas dimulai.",
+    },
+    "customer-service": {
+      label: "Customer Service",
+      skill: "merespons pelanggan dengan empati dan langkah lanjut yang jelas",
+      action: "buat respons tiga kalimat untuk satu keluhan pelanggan nyata atau simulasi",
+      evidence: "respons tertulis atau rekaman simulasi percakapan",
+      scenario: "Pelanggan sudah menghubungi tiga kali dan mengatakan masalahnya belum selesai.",
+    },
+    sales: {
+      label: "Sales",
+      skill: "menggali kebutuhan sebelum menawarkan solusi",
+      action: "praktikkan tiga pertanyaan discovery pada satu prospek atau simulasi",
+      evidence: "catatan kebutuhan prospek dan refleksi singkat",
+      scenario: "Prospek langsung meminta harga sebelum menjelaskan kebutuhannya.",
+    },
+    hr: {
+      label: "HR & People",
+      skill: "memberikan feedback yang spesifik dan dapat ditindaklanjuti",
+      action: "ubah satu feedback umum menjadi observasi, dampak, dan langkah berikutnya",
+      evidence: "naskah feedback atau catatan sesi coaching",
+      scenario: "Seorang anggota tim menerima feedback 'tingkatkan komunikasi' tanpa contoh perilaku.",
+    },
+    operations: {
+      label: "Operasional",
+      skill: "menjalankan SOP secara konsisten dan mengenali penyimpangan",
+      action: "audit satu proses kerja menggunakan checklist SOP",
+      evidence: "checklist proses dan satu catatan penyimpangan",
+      scenario: "Tim melewati satu langkah SOP karena merasa pekerjaan sedang mendesak.",
+    },
+    custom: {
+      label: "Pekerjaan",
+      skill: "mengubah keputusan meeting menjadi tindakan kerja yang terukur",
+      action: "pilih satu keputusan dan tulis tindakan, PIC, serta batas waktunya",
+      evidence: "catatan tindakan dan bukti tindak lanjut",
+      scenario: "Meeting berakhir dengan beberapa keputusan, tetapi belum ada PIC dan tenggat yang jelas.",
+    },
+  };
+
+  const profile = profiles[workplaceTrack] || profiles.custom;
   const topics = [
-    { title: "Introduction & Overview", duration: 360, key_concepts: ["Course goals", "Prerequisites", "Learning outcomes"] },
-    { title: "Core Concepts Explained", duration: 420, key_concepts: ["Fundamental principles", "Key definitions", "Historical context"] },
-    { title: "Practical Applications", duration: 390, key_concepts: ["Real-world examples", "Use cases", "Industry applications"] },
-    { title: "Hands-On Tutorial", duration: 450, key_concepts: ["Step-by-step guide", "Common mistakes", "Best practices"] },
-    { title: "Advanced Techniques", duration: 370, key_concepts: ["Expert strategies", "Optimization tips", "Advanced patterns"] },
-    { title: "Common Pitfalls & Solutions", duration: 340, key_concepts: ["Troubleshooting", "Error handling", "Debugging"] },
-    { title: "Case Studies & Examples", duration: 410, key_concepts: ["Success stories", "Analysis", "Lessons learned"] },
-    { title: "Summary & Next Steps", duration: 320, key_concepts: ["Key takeaways", "Action items", "Further resources"] },
+    {
+      title: `Kenali standar kerja: ${profile.label}`,
+      duration: 300,
+      objective: `Memahami indikator utama untuk ${profile.skill}.`,
+      learn: ["Temukan tujuan kerja dari meeting", "Kenali risiko atau kesalahan yang perlu dicegah", "Tentukan indikator hasil yang bisa diamati"],
+      practice: [`Tuliskan tiga indikator keberhasilan untuk ${profile.skill}.`],
+      evidence: ["Catatan tiga indikator kerja"],
+    },
+    {
+      title: `Praktikkan satu tindakan: ${profile.label}`,
+      duration: 480,
+      objective: `Menerapkan skill pada situasi kerja yang relevan.`,
+      learn: ["Gunakan konteks, bukan jawaban hafalan", "Pilih tindakan yang paling aman dan dapat diverifikasi", "Catat alasan keputusan"],
+      practice: [profile.action],
+      evidence: [profile.evidence],
+    },
+    {
+      title: `Buktikan dan refleksikan: ${profile.label}`,
+      duration: 360,
+      objective: "Menunjukkan penerapan skill dan menentukan perbaikan berikutnya.",
+      learn: ["Bandingkan hasil dengan indikator", "Catat satu hal yang berhasil", "Pilih satu perbaikan untuk pengulangan"],
+      practice: ["Tinjau bukti praktik dan tulis refleksi singkat: lanjutkan, hentikan, mulai."],
+      evidence: [profile.evidence, "Refleksi satu paragraf"],
+    },
   ];
 
   const modules = [];
@@ -108,12 +183,12 @@ async function simulateChunking(courseId: string, userId: string) {
         course_id: courseId,
         module_number: i + 1,
         title: topic.title,
-        description: `Learn about ${topic.title.toLowerCase()} in this ${Math.floor(topic.duration / 60)} minute module`,
+        description: topic.objective,
         duration_seconds: topic.duration,
         video_start_time: startTime,
         video_end_time: endTime,
-        video_url: `https://placeholder.com/module_${i + 1}.mp4`, // Placeholder
-        thumbnail_url: `https://placeholder.com/thumb_${i + 1}.jpg`,
+        video_url: recordingUrl,
+        key_points: topic.learn,
       })
       .select()
       .single();
@@ -124,41 +199,41 @@ async function simulateChunking(courseId: string, userId: string) {
     }
 
     if (module) {
-      // Create content for this module
       await supabase.from("module_content").insert({
         module_id: module.id,
-        content_type: "slides",
-        title: `${topic.title} - Slides`,
-        file_url: `https://placeholder.com/slides_${i + 1}.pdf`,
-        file_type: "pdf",
+        content_type: "worksheet",
+        title: `Panduan Praktik — ${topic.title}`,
+        order_index: 1,
+        content_data: {
+          kind: "workplace-mission",
+          version: 1,
+          workplaceTrack,
+          objective: topic.objective,
+          learn: topic.learn,
+          practice: topic.practice,
+          evidence: topic.evidence,
+          scenario: profile.scenario,
+          feedbackPrompt: "Apa yang berhasil, apa yang perlu diperbaiki, dan kapan skill ini perlu diulang?",
+          repeatAfterDays: i === topics.length - 1 ? 7 : 3,
+        },
       });
 
-      await supabase.from("module_content").insert({
+      const correctAnswer = "Hentikan sejenak, klarifikasi kondisi, lalu tentukan tindakan dan bukti yang diperlukan.";
+      await supabase.from("module_quizzes").insert({
         module_id: module.id,
-        content_type: "summary",
-        title: `${topic.title} - Summary`,
-        content_text: `Key concepts: ${topic.key_concepts.join(", ")}`,
+        question_number: 1,
+        question_text: `${profile.scenario} Apa respons pertama yang paling tepat?`,
+        question_type: "multiple_choice",
+        options: [
+          "Lanjutkan pekerjaan agar target tetap tercapai.",
+          correctAnswer,
+          "Tunggu orang lain menemukan masalah yang sama.",
+          "Catat masalah tanpa menentukan tindakan berikutnya.",
+        ],
+        correct_answer: correctAnswer,
+        explanation: "Workplace mission mengutamakan klarifikasi konteks, tindakan yang jelas, dan bukti yang dapat diverifikasi.",
+        points: 10,
       });
-
-      // Create quiz
-      const quizQuestions = [
-        `What are the main concepts covered in ${topic.title}?`,
-        `How can you apply ${topic.title} in real-world scenarios?`,
-        `What are the key takeaways from ${topic.title}?`,
-      ];
-
-      for (let q = 0; q < quizQuestions.length; q++) {
-        await supabase.from("module_quizzes").insert({
-          module_id: module.id,
-          question_number: q + 1,
-          question_text: quizQuestions[q],
-          question_type: "multiple_choice",
-          options: ["Option A", "Option B", "Option C", "Option D"],
-          correct_answer: "Option A",
-          explanation: `This is the correct answer because it aligns with the core concepts discussed in ${topic.title}.`,
-          points: 10,
-        });
-      }
 
       modules.push(module);
     }

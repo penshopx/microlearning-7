@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Play, Pause, SkipForward, SkipBack, Volume2, VolumeX,
   CheckCircle, Circle, Lock, ChevronRight, Award,
-  Download, Share2, Clock, BookOpen, Trophy, Zap
+  Download, Share2, Clock, BookOpen, Trophy, Zap,
+  Camera, ClipboardCheck, MessageSquareText, Repeat2
 } from "lucide-react";
 import { microLearningService } from "@/services/microLearningService";
 import type { Database } from "@/integrations/supabase/types";
@@ -29,6 +30,17 @@ type ModuleContent = Database["public"]["Tables"]["module_content"]["Row"];
 type ModuleQuiz = Database["public"]["Tables"]["module_quizzes"]["Row"];
 type LearnerProgress = Database["public"]["Tables"]["learner_progress"]["Row"];
 
+type MissionBlueprint = {
+  kind?: string;
+  objective?: string;
+  learn?: string[];
+  practice?: string[];
+  evidence?: string[];
+  scenario?: string;
+  feedbackPrompt?: string;
+  repeatAfterDays?: number;
+};
+
 export default function CoursePage() {
   const router = useRouter();
   const { id } = router.query;
@@ -43,6 +55,7 @@ export default function CoursePage() {
   const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [achievements, setAchievements] = useState<string[]>([]);
+  const [evidenceConfirmed, setEvidenceConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -69,6 +82,11 @@ export default function CoursePage() {
   };
 
   const currentModule = course?.modules?.[currentModuleIndex];
+  const missionBlueprint = currentModule?.content?.find(
+    (item) =>
+      item.content_type === "worksheet" &&
+      (item.content_data as { kind?: string } | null)?.kind === "workplace-mission"
+  )?.content_data as MissionBlueprint | undefined;
   const moduleProgress = progress.find((p) => p.module_id === currentModule?.id);
   const completedModules = progress.filter((p) => p.status === "completed").length;
   const totalModules = course?.modules?.length || 0;
@@ -129,6 +147,7 @@ export default function CoursePage() {
       setShowQuiz(false);
       setQuizSubmitted(false);
       setQuizAnswers({});
+      setEvidenceConfirmed(false);
     }
   };
 
@@ -138,6 +157,7 @@ export default function CoursePage() {
       setShowQuiz(false);
       setQuizSubmitted(false);
       setQuizAnswers({});
+      setEvidenceConfirmed(false);
     }
   };
 
@@ -150,7 +170,7 @@ export default function CoursePage() {
     ).length;
     const score = (correctCount / quizzes.length) * 100;
 
-    if (score >= 70) {
+    if (score >= 70 && !missionBlueprint) {
       handleModuleComplete();
     }
   };
@@ -163,7 +183,7 @@ export default function CoursePage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading course...</div>
+        <div className="text-white text-xl">Memuat misi...</div>
       </div>
     );
   }
@@ -172,9 +192,9 @@ export default function CoursePage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-white text-2xl mb-4">Course not found</h1>
+          <h1 className="text-white text-2xl mb-4">Misi tidak ditemukan</h1>
           <Link href="/micro-learning">
-            <Button>Back to Courses</Button>
+            <Button>Kembali ke Workplace Coach</Button>
           </Link>
         </div>
       </div>
@@ -187,8 +207,8 @@ export default function CoursePage() {
         <title>{course.title} - Chaesa Live Micro-Learning</title>
       </Head>
       <SEO
-        title={course.title || "Course"}
-        description={course.description || "Learn with Chaesa Live"}
+        title={course.title || "Workplace Mission"}
+        description={course.description || "Praktikkan skill kerja bersama Chaesa Live"}
       />
 
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900">
@@ -216,7 +236,7 @@ export default function CoursePage() {
               <div className="flex items-center gap-4">
                 <Link href="/micro-learning">
                   <Button variant="ghost" className="text-white hover:bg-white/10">
-                    ← Back to Courses
+                     ← Kembali ke Misi
                   </Button>
                 </Link>
                 <div>
@@ -224,7 +244,7 @@ export default function CoursePage() {
                   <div className="flex items-center gap-4 mt-1 text-sm text-gray-400">
                     <div className="flex items-center gap-1">
                       <BookOpen className="w-4 h-4" />
-                      {completedModules}/{totalModules} modules
+                       {completedModules}/{totalModules} langkah
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="w-4 h-4" />
@@ -237,7 +257,7 @@ export default function CoursePage() {
               <div className="flex items-center gap-2">
                 <Button variant="outline" className="text-white border-white/20">
                   <Share2 className="w-4 h-4 mr-2" />
-                  Share
+                   Bagikan
                 </Button>
                 <Button variant="outline" className="text-white border-white/20">
                   <Download className="w-4 h-4 mr-2" />
@@ -249,7 +269,7 @@ export default function CoursePage() {
             {/* Progress Bar */}
             <div className="mt-4">
               <div className="flex items-center justify-between text-sm text-gray-400 mb-2">
-                <span>Overall Progress</span>
+               <span>Progres Misi</span>
                 <span>{Math.round(overallProgress)}%</span>
               </div>
               <Progress value={overallProgress} className="h-2" />
@@ -283,7 +303,7 @@ export default function CoursePage() {
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <div className="text-sm text-gray-400 mb-1">
-                        Module {currentModuleIndex + 1} of {totalModules}
+                         Langkah {currentModuleIndex + 1} dari {totalModules}
                       </div>
                       <h2 className="text-2xl font-bold text-white">
                         {currentModule?.title}
@@ -292,7 +312,7 @@ export default function CoursePage() {
                     {moduleProgress?.status === "completed" && (
                       <Badge className="bg-green-500">
                         <CheckCircle className="w-4 h-4 mr-1" />
-                        Completed
+                         Selesai
                       </Badge>
                     )}
                   </div>
@@ -310,7 +330,7 @@ export default function CoursePage() {
                       className="text-white border-white/20"
                     >
                       <SkipBack className="w-4 h-4 mr-2" />
-                      Previous
+                       Sebelumnya
                     </Button>
 
                     {!showQuiz && currentModule?.quizzes && currentModule.quizzes.length > 0 && (
@@ -319,7 +339,7 @@ export default function CoursePage() {
                         className="bg-gradient-to-r from-purple-600 to-pink-600"
                       >
                         <Zap className="w-4 h-4 mr-2" />
-                        Take Quiz
+                         Jawab Skenario
                       </Button>
                     )}
 
@@ -329,24 +349,85 @@ export default function CoursePage() {
                       disabled={currentModuleIndex === totalModules - 1}
                       className="text-white border-white/20"
                     >
-                      Next
+                       Berikutnya
                       <SkipForward className="w-4 h-4 ml-2" />
                     </Button>
                   </div>
                 </div>
               </Card>
 
+              {missionBlueprint && (
+                <Card className="bg-blue-950/50 backdrop-blur-sm border-blue-400/20 p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">Misi Praktik</p>
+                      <h3 className="mt-2 text-xl font-bold text-white">{missionBlueprint.objective}</h3>
+                    </div>
+                    <ClipboardCheck className="w-7 h-7 text-blue-300 shrink-0" />
+                  </div>
+
+                  <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <MessageSquareText className="w-5 h-5 text-blue-300 mb-3" />
+                      <h4 className="font-semibold text-white mb-2">Pelajari</h4>
+                      <ul className="space-y-2 text-sm text-slate-300">
+                        {(missionBlueprint.learn || []).map((item) => <li key={item}>• {item}</li>)}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <ClipboardCheck className="w-5 h-5 text-amber-300 mb-3" />
+                      <h4 className="font-semibold text-white mb-2">Praktikkan</h4>
+                      <ul className="space-y-2 text-sm text-slate-300">
+                        {(missionBlueprint.practice || []).map((item) => <li key={item}>• {item}</li>)}
+                      </ul>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <Camera className="w-5 h-5 text-emerald-300 mb-3" />
+                      <h4 className="font-semibold text-white mb-2">Siapkan Bukti</h4>
+                      <ul className="space-y-2 text-sm text-slate-300">
+                        {(missionBlueprint.evidence || []).map((item) => <li key={item}>• {item}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-blue-400/20 bg-blue-400/10 p-4">
+                    <div>
+                      <p className="text-sm text-blue-100">{missionBlueprint.feedbackPrompt}</p>
+                      <p className="mt-1 flex items-center gap-1.5 text-xs text-blue-300">
+                        <Repeat2 className="w-3.5 h-3.5" />
+                        Ulangi skill ini dalam {missionBlueprint.repeatAfterDays || 3} hari
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setEvidenceConfirmed(true);
+                        handleModuleComplete();
+                      }}
+                      disabled={evidenceConfirmed || moduleProgress?.status === "completed"}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold"
+                    >
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      {evidenceConfirmed || moduleProgress?.status === "completed"
+                        ? "Bukti dikonfirmasi"
+                        : "Saya sudah menyiapkan bukti"}
+                    </Button>
+                  </div>
+                </Card>
+              )}
+
               {/* Quiz Section */}
               {showQuiz && currentModule?.quizzes && (
                 <Card className="bg-black/40 backdrop-blur-sm border-white/10 p-6">
                   <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
                     <Zap className="w-6 h-6 text-yellow-500" />
-                    Module Quiz
+                    Skenario Keputusan
                   </h3>
 
                   <div className="space-y-6">
                     {currentModule.quizzes.map((quiz, idx) => {
-                      const options = (quiz.options as { options?: string[] })?.options || [];
+                      const options = Array.isArray(quiz.options)
+                        ? quiz.options.filter((option): option is string => typeof option === "string")
+                        : (quiz.options as { options?: string[] } | null)?.options || [];
                       const isCorrect = quizSubmitted && quizAnswers[idx] === quiz.correct_answer;
                       const isWrong = quizSubmitted && quizAnswers[idx] !== quiz.correct_answer;
 
@@ -383,7 +464,7 @@ export default function CoursePage() {
                             <div className={`p-3 rounded-lg ${
                               isCorrect ? "bg-green-500/10 text-green-300" : "bg-blue-500/10 text-blue-300"
                             }`}>
-                              <div className="font-medium mb-1">Explanation:</div>
+                              <div className="font-medium mb-1">Pembahasan:</div>
                               <div className="text-sm">{quiz.explanation}</div>
                             </div>
                           )}
@@ -398,17 +479,17 @@ export default function CoursePage() {
                       disabled={Object.keys(quizAnswers).length !== currentModule.quizzes.length}
                       className="w-full mt-6 bg-gradient-to-r from-purple-600 to-pink-600"
                     >
-                      Submit Quiz
+                      Periksa Jawaban
                     </Button>
                   )}
 
                   {quizSubmitted && (
                     <div className="mt-6 p-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg text-center">
                       <div className="text-white text-lg font-bold mb-2">
-                        Quiz Complete!
+                        Skenario selesai
                       </div>
                       <div className="text-gray-300">
-                        You got {currentModule.quizzes.filter((q, idx) => quizAnswers[idx] === q.correct_answer).length} out of {currentModule.quizzes.length} correct
+                        Jawaban benar {currentModule.quizzes.filter((q, idx) => quizAnswers[idx] === q.correct_answer).length} dari {currentModule.quizzes.length}
                       </div>
                       <Button
                         onClick={() => {
@@ -417,7 +498,7 @@ export default function CoursePage() {
                         }}
                         className="mt-4 bg-gradient-to-r from-purple-600 to-pink-600"
                       >
-                        Continue to Next Module
+                        Lanjut ke Langkah Berikutnya
                         <ChevronRight className="w-4 h-4 ml-2" />
                       </Button>
                     </div>
