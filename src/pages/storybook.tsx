@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { fetchAI } from "@/lib/ai-client";
 import { useAuth, getUserStorageKey } from "@/hooks/useAuth";
 import {
   BookOpen, Plus, ChevronLeft, ChevronRight, Search,
@@ -411,7 +412,7 @@ export default function StorybookPage() {
     setIsGenerating(true);
 
     try {
-      const res = await fetch("/api/ai/generate-story", {
+      const res = await fetchAI("/api/ai/generate-story", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -423,6 +424,9 @@ export default function StorybookPage() {
       });
 
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal membuat cerita");
+      }
 
       const newStory: Story = {
         id: `story-${Date.now()}`,

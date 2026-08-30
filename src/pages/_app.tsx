@@ -9,6 +9,7 @@ import { ChatWidget } from "@/components/ChatWidget";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AdminAIWarning } from "@/components/AdminAIWarning";
+import { AIUnavailableBanner } from "@/components/AIUnavailableBanner";
 
 function RouteLoadingBar() {
   const router = useRouter();
@@ -84,6 +85,7 @@ export default function App({ Component, pageProps }: AppProps) {
       <OnboardingWizard />
       <CommandPalette />
       <AdminAIWarning />
+      <AIUnavailableBanner />
     </ThemeProvider>
   );
 }

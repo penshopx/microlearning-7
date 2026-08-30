@@ -25,7 +25,11 @@ export function sseDone(res: NextApiResponse) {
 }
 
 /** Send an error event and close the stream. */
-export function sseError(res: NextApiResponse, message: string) {
-  res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
+export function sseError(
+  res: NextApiResponse,
+  message: string,
+  details?: { code?: string; adminUrl?: string },
+) {
+  res.write(`event: error\ndata: ${JSON.stringify({ error: message, ...details })}\n\n`);
   res.end();
 }

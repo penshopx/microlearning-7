@@ -30,6 +30,7 @@ import {
 import type { MemoryFact } from "@/lib/agent-memory";
 import { extractCitations, TYPE_CONFIG } from "@/lib/standards-data";
 import type { Citation } from "@/lib/standards-data";
+import { fetchAI } from "@/lib/ai-client";
 
 /* ── Types ──────────────────────────────────────────── */
 interface HistoryItem { role: "user" | "assistant"; content: string; }
@@ -641,7 +642,7 @@ export default function AIAgentsPage() {
       if (collabMode) {
         /* Blackboard Pattern */
         const { readSSE } = await import("@/lib/sse-reader");
-        const res = await fetch("/api/ai/multi-agent-collab", {
+        const res = await fetchAI("/api/ai/multi-agent-collab", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: content, history: historyForApi, sessionId, memoryContext: memCtx, stream: true }),
@@ -854,7 +855,7 @@ export default function AIAgentsPage() {
       } else {
         /* Orchestrator-Worker Pattern — streaming specialist response */
         const { readSSE } = await import("@/lib/sse-reader");
-        const res = await fetch("/api/ai/multi-agent", {
+        const res = await fetchAI("/api/ai/multi-agent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: content, history: historyForApi, preferredAgent: effectiveAgent, sessionId, memoryContext: memCtx }),

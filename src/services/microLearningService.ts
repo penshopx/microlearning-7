@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { fetchAI } from "@/lib/ai-client";
 
 type _Course = Database["public"]["Tables"]["courses"]["Row"];
 type _CourseModule = Database["public"]["Tables"]["course_modules"]["Row"];
@@ -45,7 +46,7 @@ export const microLearningService = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const response = await fetch("/api/ai/chunk-meeting", {
+      const response = await fetchAI("/api/ai/chunk-meeting", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -73,7 +74,7 @@ export const microLearningService = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const response = await fetch("/api/ai/generate-module", {
+      const response = await fetchAI("/api/ai/generate-module", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -347,7 +348,7 @@ export const microLearningService = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const response = await fetch("/api/ai/optimize-social", {
+      const response = await fetchAI("/api/ai/optimize-social", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

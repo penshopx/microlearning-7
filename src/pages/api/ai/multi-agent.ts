@@ -136,6 +136,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err) {
     console.error("Multi-agent error:", err);
     const aiErr = classifyOpenAIError(err);
-    sseError(res, aiErr.isAIUnavailable ? aiErr.userMessage : "Gagal memproses permintaan multi-agent");
+    sseError(
+      res,
+      aiErr.isAIUnavailable ? aiErr.userMessage : "Gagal memproses permintaan multi-agent",
+      aiErr.isApiKeyError ? { code: aiErr.code, adminUrl: "/admin" } : undefined,
+    );
   }
 }

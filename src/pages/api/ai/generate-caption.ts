@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
-import { classifyOpenAIError } from "@/lib/openai-error";
+import { classifyOpenAIError, getOpenAIErrorResponse } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -62,9 +62,9 @@ export default async function handler(
     });
   } catch (error) {
     console.error("Generate Caption Error:", error);
-    const aiErr = classifyOpenAIError(error);
-    if (aiErr.isAIUnavailable) {
-      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+    const aiErrorResponse = getOpenAIErrorResponse(error);
+    if (aiErrorResponse) {
+      return res.status(aiErrorResponse.status).json(aiErrorResponse.body);
     }
     return res.status(500).json({
       error: "Failed to generate caption",

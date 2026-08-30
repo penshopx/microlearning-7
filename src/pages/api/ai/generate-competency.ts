@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
+import { getOpenAIErrorResponse } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -28,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const levelDesc = levelMap[level] || levelMap.L2;
 
     let prompt = "";
-    let systemPrompt = `Kamu adalah ahli pengembangan kompetensi berbasis SKKNI (Standar Kompetensi Kerja Nasional Indonesia) yang berpengalaman dalam merancang e-course terstruktur dan evidensi-based. Berikan respons dalam Bahasa Indonesia yang profesional dan terstruktur. Selalu kembalikan respons sebagai JSON valid.`;
+    const systemPrompt = `Kamu adalah ahli pengembangan kompetensi berbasis SKKNI (Standar Kompetensi Kerja Nasional Indonesia) yang berpengalaman dalam merancang e-course terstruktur dan evidensi-based. Berikan respons dalam Bahasa Indonesia yang profesional dan terstruktur. Selalu kembalikan respons sebagai JSON valid.`;
 
     if (type === "indicators") {
       prompt = `Buat indikator kompetensi untuk unit kompetensi SKKNI:
@@ -167,10 +168,9 @@ Hasilkan JSON lengkap dengan format:
     return res.status(200).json({ success: true, data: parsed, type });
   } catch (error) {
     console.error("Competency AI generation error:", error);
-    const { classifyOpenAIError } = await import("@/lib/openai-error");
-    const aiErr = classifyOpenAIError(error);
-    if (aiErr.isAIUnavailable) {
-      return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+    const aiErrorResponse = getOpenAIErrorResponse(error);
+    if (aiErrorResponse) {
+      return res.status(aiErrorResponse.status).json(aiErrorResponse.body);
     }
     return res.status(500).json({
       error: "Gagal generate konten AI",

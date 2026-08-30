@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { fetchAI } from "@/lib/ai-client";
 import { useAuth, getUserStorageKey } from "@/hooks/useAuth";
 import {
   Target, BookOpen, Video, Wrench, ClipboardCheck, Lightbulb,
@@ -193,7 +194,7 @@ export default function CompetencyBuilder() {
   };
 
   const callAI = async (type: string) => {
-    const res = await fetch("/api/ai/generate-competency", {
+    const res = await fetchAI("/api/ai/generate-competency", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -204,8 +205,8 @@ export default function CompetencyBuilder() {
         title: course.title,
       }),
     });
-    if (!res.ok) throw new Error(`API error ${res.status}`);
     const json = await res.json();
+    if (!res.ok) throw new Error(json.error || `API error ${res.status}`);
     return json.data;
   };
 

@@ -9,7 +9,7 @@
    3. A synthesis agent combines their insights into actionable conclusions */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { classifyOpenAIError } from "@/lib/openai-error";
+import { classifyOpenAIError, getOpenAIErrorResponse } from "@/lib/openai-error";
 import OpenAI from "openai";
 import { AGENTS } from "@/lib/agents-data";
 import type { AgentId } from "@/lib/agents-data";
@@ -285,9 +285,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(await buildNonStreamingResponse(message, history, sessionId, memoryContext));
     } catch (err) {
       console.error("Multi-agent collab error:", err);
-      const aiErr = classifyOpenAIError(err);
-      if (aiErr.isAIUnavailable) {
-        return res.status(429).json({ error: aiErr.userMessage, code: aiErr.code });
+      const aiErrorResponse = getOpenAIErrorResponse(err);
+      if (aiErrorResponse) {
+        return res.status(aiErrorResponse.status).json(aiErrorResponse.body);
       }
       return res.status(500).json({
         error: "Gagal memproses kolaborasi multi-agent",
@@ -304,6 +304,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const selectedAgents = await routeToTopTwo(message, history);
     sseEvent(res, "routing", { agents: selectedAgents });
     const followupsPromise = generateFollowups(message, AbortSignal.timeout(4000)).catch(err => {
+      const aiErr = classifyOpenAIError(err);
+      if (aiErr.isApiKeyError) throw err;
       console.warn("Multi-agent collab follow-up generation failed:", err);
       return [] as string[];
     });
@@ -390,6 +392,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err) {
     console.error("Multi-agent collab error:", err);
     const aiErr = classifyOpenAIError(err);
-    sseError(res, aiErr.isAIUnavailable ? aiErr.userMessage : "Gagal memproses kolaborasi multi-agent");
+    sseError(
+      res,
+      aiErr.isAIUnavailable ? aiErr.userMessage : "Gagal memproses kolaborasi multi-agent",
+      aiErr.isApiKeyError ? { code: aiErr.code, adminUrl: "/admin" } : undefined,
+    );
   }
 }

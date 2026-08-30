@@ -1,3 +1,5 @@
+import { AI_API_KEY_ERROR_CODE, notifyAIUnavailable } from "@/lib/ai-client";
+
 /**
  * Read a Server-Sent Events stream from a fetch Response body.
  *
@@ -42,6 +44,15 @@ export async function readSSE(
           try {
             const parsed = JSON.parse(raw);
             if (pendingEvent) {
+              if (
+                pendingEvent === "error" &&
+                parsed &&
+                typeof parsed === "object" &&
+                "code" in parsed &&
+                parsed.code === AI_API_KEY_ERROR_CODE
+              ) {
+                notifyAIUnavailable(parsed);
+              }
               handlers.onEvent?.(pendingEvent, parsed);
               pendingEvent = "";
             } else if (typeof parsed === "string") {

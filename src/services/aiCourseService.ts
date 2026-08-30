@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAI } from "@/lib/ai-client";
 import type { Database } from "@/integrations/supabase/types";
 
 type AIProcessingJob = Database["public"]["Tables"]["ai_processing_jobs"]["Row"];
@@ -104,7 +105,7 @@ export const aiCourseService = {
     }
 
     // Call the analysis API
-    const response = await fetch("/api/ai/analyze-meeting", {
+    const response = await fetchAI("/api/ai/analyze-meeting", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

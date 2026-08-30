@@ -51,6 +51,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err) {
     console.error("run-tool error:", err);
     const aiErr = classifyOpenAIError(err);
-    sseError(res, aiErr.isAIUnavailable ? aiErr.userMessage : (err instanceof Error ? err.message : "Gagal menjalankan tool"));
+    sseError(
+      res,
+      aiErr.isAIUnavailable ? aiErr.userMessage : (err instanceof Error ? err.message : "Gagal menjalankan tool"),
+      aiErr.isApiKeyError ? { code: aiErr.code, adminUrl: "/admin" } : undefined,
+    );
   }
 }

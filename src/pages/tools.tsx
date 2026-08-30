@@ -4,6 +4,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { Sun, Moon, Home, Search, Zap, X, ChevronRight, Copy, Download, RotateCcw, Loader2, Star, Sparkles, Lock, CheckCircle2, ArrowLeft, Heart, Clock, BookMarked } from "lucide-react";
 import { AI_TOOLS, TOOL_CATEGORIES, type AiTool } from "@/lib/tools-data";
+import { fetchAI } from "@/lib/ai-client";
 
 const RECENTS_KEY = "chaesa_recent_tools_v1";
 const FAVS_KEY = "chaesa_fav_tools_v1";
@@ -267,7 +268,7 @@ export default function ToolsPage() {
     setError(null);
     try {
       const { readSSE } = await import("@/lib/sse-reader");
-      const res = await fetch("/api/ai/run-tool", {
+      const res = await fetchAI("/api/ai/run-tool", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ toolId: selectedTool.id, formData }),

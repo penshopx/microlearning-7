@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { AIHealthResponse } from "@/pages/api/ai/health";
+import { fetchAI } from "@/lib/ai-client";
 import {
   ShieldCheck,
   ShieldAlert,
@@ -65,7 +66,7 @@ export default function AdminPage() {
         return;
       }
 
-      const res = await fetch("/api/ai/health", {
+      const res = await fetchAI("/api/ai/health", {
         headers: { Authorization: `Bearer ${token}` },
       });
 

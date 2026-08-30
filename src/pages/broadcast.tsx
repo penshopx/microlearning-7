@@ -14,6 +14,7 @@ import {
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { toast } from "@/hooks/use-toast";
+import { fetchAI } from "@/lib/ai-client";
 
 interface Contact {
   id: string;
@@ -125,7 +126,7 @@ export default function BroadcastPage() {
     }
     setIsGenerating(true);
     try {
-      const res = await fetch("/api/ai/generate-caption", {
+      const res = await fetchAI("/api/ai/generate-caption", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: aiTopic, platform: aiPlatform, tone: aiTone }),
