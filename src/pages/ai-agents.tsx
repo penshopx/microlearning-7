@@ -528,7 +528,9 @@ export default function AIAgentsPage() {
 
   const scrollMessagesToBottom = useCallback(() => {
     const container = messagesContainerRef.current;
-    if (!container) return;
+    // The user may have scrolled away after the frame was scheduled. Check
+    // again here so a pending frame can never pull them back unexpectedly.
+    if (!container || !shouldAutoScrollRef.current) return;
     container.scrollTop = container.scrollHeight;
   }, []);
 
