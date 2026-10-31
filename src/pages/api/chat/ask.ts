@@ -56,9 +56,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } catch (error) {
       const aiErr = classifyOpenAIError(error);
       if (aiErr.isAIUnavailable) {
+        if (aiErr.isApiKeyError) await logOpenAIError("OpenAI API error", error);
         fullReply = `⚠️ ${aiErr.userMessage}`;
       } else {
-        logOpenAIError("OpenAI API error, falling back to knowledge base", error);
+        await logOpenAIError("OpenAI API error, falling back to knowledge base", error);
         fullReply = generateSmartResponse(message);
       }
       sseChunk(res, fullReply);
@@ -81,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     sseDone(res);
   } catch (error) {
-    logOpenAIError("Chat API error", error);
+    await logOpenAIError("Chat API error", error);
     sseError(res, "Maaf, ada sedikit gangguan. Bisa Kamu ulangi pertanyaannya?");
   }
 }

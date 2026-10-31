@@ -134,7 +134,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     sseDone(res);
 
   } catch (err) {
-    logOpenAIError("Multi-agent error", err);
+    await logOpenAIError("Multi-agent error", err);
     const aiErr = classifyOpenAIError(err);
     sseError(
       res,

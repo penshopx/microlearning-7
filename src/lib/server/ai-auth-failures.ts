@@ -1,62 +1,75 @@
-import {
-  AI_AUTH_FAILURE_THRESHOLD,
-  AI_AUTH_FAILURE_WINDOW_MS,
-  type AIAuthIncident,
-} from "@/lib/ai-auth-incident";
+import { createClient } from "@supabase/supabase-js";
+import type { AIAuthIncident } from "@/lib/ai-auth-incident";
 
-interface FailureState {
-  recent: number[];
-  incident: AIAuthIncident | null;
-  sequence: number;
-  seen: WeakSet<object>;
+interface StoredIncident {
+  id: string;
+  failureCount: number;
+  startedAt: number;
+  lastFailureAt: number;
 }
 
-// Share across Next route bundles and dev hot reloads in this server process.
-// This intentionally stores only counters/times, not keys, users or error bodies.
-const server = globalThis as typeof globalThis & { aiAuthFailures?: FailureState };
-function state(): FailureState {
-  return server.aiAuthFailures ??= {
-    recent: [], incident: null, sequence: 0, seen: new WeakSet(),
-  };
+const seenErrors = new WeakSet<object>();
+
+function serverClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceRoleKey) {
+    throw new Error("AI auth incident storage is not configured");
+  }
+
+  return createClient(url, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
-export function recordAIAuthFailure(error: object, now = Date.now()): void {
-  const current = state();
-  // Nested catch blocks may classify the same SDK error more than once.
-  if (current.seen.has(error)) return;
-  current.seen.add(error);
-  current.sequence += 1;
+function throwIfStoreError(error: unknown): void {
+  if (error) throw new Error("AI auth incident storage request failed");
+}
 
-  current.recent = current.recent.filter(time => now - time < AI_AUTH_FAILURE_WINDOW_MS);
-  current.recent.push(now);
-  // Only the most recent threshold-sized window is needed to detect recurrence.
-  current.recent = current.recent.slice(-AI_AUTH_FAILURE_THRESHOLD);
-  if (current.incident) {
-    current.incident.failureCount += 1;
-    current.incident.lastFailureAt = now;
-  } else if (current.recent.length >= AI_AUTH_FAILURE_THRESHOLD) {
-    current.incident = {
-      id: `ai-auth-${now}-${current.sequence}`,
-      failureCount: current.recent.length,
-      startedAt: current.recent[0],
-      lastFailureAt: now,
-    };
+export async function recordAIAuthFailure(providerError: object, now?: number): Promise<void> {
+  // Nested catch blocks may log the same SDK error more than once.
+  if (seenErrors.has(providerError)) return;
+  seenErrors.add(providerError);
+  try {
+    const { error: storeError } = await serverClient().rpc("record_ai_auth_failure", {
+      p_occurred_at: now === undefined ? null : new Date(now).toISOString(),
+    });
+    throwIfStoreError(storeError);
+  } catch (error) {
+    seenErrors.delete(providerError);
+    throw error instanceof Error && error.message === "AI auth incident storage request failed"
+      ? error
+      : new Error("AI auth incident storage request failed");
   }
 }
 
-export function getAIAuthIncident(): AIAuthIncident | null {
-  const incident = state().incident;
-  return incident ? { ...incident } : null;
+export async function getAIAuthIncident(): Promise<AIAuthIncident | null> {
+  const { data, error } = await serverClient().rpc("get_ai_auth_incident");
+  throwIfStoreError(error);
+  if (!data || typeof data !== "object") return null;
+  const incident = data as StoredIncident;
+  return {
+    id: incident.id,
+    failureCount: incident.failureCount,
+    startedAt: incident.startedAt,
+    lastFailureAt: incident.lastFailureAt,
+  };
 }
 
-export function getAIAuthFailureSequence(): number {
-  return state().sequence;
+export async function getAIAuthFailureSequence(): Promise<number> {
+  const { data, error } = await serverClient().rpc("get_ai_auth_failure_sequence");
+  throwIfStoreError(error);
+  const sequence = Number(data);
+  if (!Number.isSafeInteger(sequence) || sequence < 0) {
+    throw new Error("AI auth incident storage returned an invalid sequence");
+  }
+  return sequence;
 }
 
 /** A successful probe must not clear failures arriving while it was in flight. */
-export function clearAIAuthFailures(checkedSequence: number): void {
-  const current = state();
-  if (current.sequence !== checkedSequence) return;
-  current.recent = [];
-  current.incident = null;
+export async function clearAIAuthFailures(checkedSequence: number): Promise<void> {
+  const { error } = await serverClient().rpc("clear_ai_auth_failures", {
+    p_checked_sequence: checkedSequence,
+  });
+  throwIfStoreError(error);
 }

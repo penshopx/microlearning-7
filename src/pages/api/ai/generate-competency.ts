@@ -167,7 +167,7 @@ Hasilkan JSON lengkap dengan format:
 
     return res.status(200).json({ success: true, data: parsed, type });
   } catch (error) {
-    logOpenAIError("Competency AI generation error", error);
+    await logOpenAIError("Competency AI generation error", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);

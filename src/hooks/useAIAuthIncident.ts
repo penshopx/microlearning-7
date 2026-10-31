@@ -5,7 +5,7 @@ import {
   type AIAuthIncident,
 } from "@/lib/ai-auth-incident";
 
-/** Poll local incident metadata only, never the provider health probe. */
+/** Poll shared admin-only incident metadata, never the provider health probe. */
 export function useAIAuthIncident(userId: string | null, isAdmin: boolean) {
   const [snapshot, setSnapshot] = useState<{
     userId: string;

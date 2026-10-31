@@ -10,6 +10,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:integration:evidence": "bash scripts/test-mission-evidence.sh",
+    "test:integration:ai-auth": "bash scripts/test-ai-auth-incidents.sh",
     "audit": "npm audit --audit-level=high",
     "postinstall": "npm run audit"
   },

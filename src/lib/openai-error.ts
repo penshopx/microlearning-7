@@ -69,7 +69,6 @@ export function classifyOpenAIError(err: unknown): OpenAIErrorInfo {
   const errorMessage = err instanceof Error ? err.message : "";
 
   if (status === 401) {
-    recordAIAuthFailure(err as object);
     return {
       isApiKeyError: true,
       isQuotaError: false,
@@ -131,7 +130,10 @@ export function classifyOpenAIError(err: unknown): OpenAIErrorInfo {
 }
 
 /** Never log the SDK error: it may include credentials or response bodies. */
-export function logOpenAIError(context: string, err: unknown): void {
+export async function logOpenAIError(context: string, err: unknown): Promise<void> {
   const info = classifyOpenAIError(err);
+  if (info.isApiKeyError && typeof err === "object" && err !== null) {
+    await recordAIAuthFailure(err);
+  }
   console.error(context, { code: info.code });
 }

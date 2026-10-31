@@ -49,7 +49,7 @@ export default async function handler(
     } catch (error) {
       const aiErr = classifyOpenAIError(error);
       if (aiErr.isAIUnavailable) throw error; // propagate quota/rate-limit to outer catch
-      logOpenAIError("OpenAI API error, falling back to template", error);
+      await logOpenAIError("OpenAI API error, falling back to template", error);
       result = generateFallback(topic, platform as Platform, tone as Tone);
     }
 
@@ -61,7 +61,7 @@ export default async function handler(
       ...result,
     });
   } catch (error) {
-    logOpenAIError("Generate Caption Error", error);
+    await logOpenAIError("Generate Caption Error", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);

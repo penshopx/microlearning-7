@@ -175,7 +175,7 @@ IMPORTANT: Return ONLY valid JSON, no markdown formatting.`;
 
     return res.status(200).json(story);
   } catch (error) {
-    logOpenAIError("Story generation error", error);
+    await logOpenAIError("Story generation error", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse?.status === 503) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);

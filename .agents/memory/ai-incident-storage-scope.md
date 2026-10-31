@@ -3,8 +3,8 @@ name: AI incident storage scope
 description: Explains the operational limit of the initial provider-authentication alert implementation.
 ---
 
-The initial provider-authentication alert uses process-local operational metadata, not durable business storage. Do not assume alert continuity across server restarts or aggregation across replicas.
+Provider-authentication incidents use one shared Supabase row containing only a failure sequence, recent timestamps, incident ID, count, and start/last-failure timestamps. Server-side `service_role` RPCs serialize writes and version-guard recovery; the admin API checks the user's profile role before returning incident metadata.
 
-**Why:** The initial scope was an in-app repeated-failure warning without introducing a new datastore or changing the existing Supabase schema. That keeps credential material out of storage, but does not provide durable incident tracking.
+**Why:** AI errors can occur in different API routes without a shared authenticated user's token. A trusted server-only database client is needed to persist them consistently, while browser clients must not be able to read or manipulate incident state.
 
-**How to apply:** Before depending on these alerts in a multi-replica or restart-sensitive environment, move the counters and recovery state into shared storage with atomic updates and admin-only reads. Preserve the metadata-only privacy boundary; never store SDK errors, provider bodies, keys or request headers.
+**How to apply:** Keep persistence in server-only code and restrict its RPC grants to `service_role`. Keep the user-facing status endpoint admin-gated, and clear incidents only when the sequence captured before a successful provider probe still matches. Never store SDK errors, provider bodies, keys, or request headers.

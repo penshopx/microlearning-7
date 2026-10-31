@@ -3,7 +3,7 @@
 - [Next build and preview order](next-build-preview-order.md) — restart Next dev after production builds before judging preview failures.
 - [AI output validation order](ai-output-validation-order.md) — validate required raw AI fields before tolerant normalization, or defaults can hide contract drift.
 - [Pages Router component tests](pages-router-component-tests.md) — keep tests out of route folders; use the project’s OXC and happy-dom setup for TSX tests.
-- [AI incident storage scope](ai-incident-storage-scope.md) — current alerts are process-local; shared durable storage is needed before relying on them across replicas or restarts.
+- [AI incident storage scope](ai-incident-storage-scope.md) — keep persisted AI auth incidents metadata-only, with server-role writes and admin-gated reads.
 - [Supervisor evidence consent](supervisor-evidence-consent.md) — course authorship is not a supervisory relationship; proof access needs explicit participant-scoped authorization.
 - [Upsert trigger ordering](upsert-trigger-ordering.md) — INSERT triggers run before conflict handling; evidence validation can reject omitted fields before stored state is merged.
 - [Evidence cleanup safety](evidence-cleanup-safety.md) — a lost save response is not a failed commit; only server-confirmed retired uploads may be deleted.

@@ -45,7 +45,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
     const hasBaseUrl = !!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
 
-    return res.status(200).json({ hasKey, hasBaseUrl, authFailureIncident: getAIAuthIncident() });
+    return res.status(200).json({
+      hasKey,
+      hasBaseUrl,
+      authFailureIncident: await getAIAuthIncident(),
+    });
   } catch (err) {
     console.error("ai-status check failed");
     return res.status(500).json({ error: "Internal error" });

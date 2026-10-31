@@ -49,7 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     sseDone(res);
   } catch (err) {
-    logOpenAIError("run-tool error", err);
+    await logOpenAIError("run-tool error", err);
     const aiErr = classifyOpenAIError(err);
     sseError(
       res,

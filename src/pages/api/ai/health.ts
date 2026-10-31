@@ -77,7 +77,12 @@ export default async function handler(
   const modelsUrl = baseURL
     ? `${baseURL.replace(/\/$/, "")}/models`
     : "https://api.openai.com/v1/models";
-  const checkedSequence = getAIAuthFailureSequence();
+  let checkedSequence: number;
+  try {
+    checkedSequence = await getAIAuthFailureSequence();
+  } catch {
+    return res.status(503).json({ error: "AI incident storage is unavailable" });
+  }
 
   try {
     const response = await fetch(modelsUrl, {
@@ -87,7 +92,11 @@ export default async function handler(
     });
 
     if (response.ok) {
-      clearAIAuthFailures(checkedSequence);
+      try {
+        await clearAIAuthFailures(checkedSequence);
+      } catch {
+        return res.status(503).json({ error: "AI incident storage is unavailable" });
+      }
       return res.status(200).json({
         status: "ok",
         message: "AI integration key is valid and the provider is reachable.",
@@ -96,7 +105,11 @@ export default async function handler(
     }
 
     if (response.status === 401) {
-      recordAIAuthFailure({});
+      try {
+        await recordAIAuthFailure({});
+      } catch {
+        return res.status(503).json({ error: "AI incident storage is unavailable" });
+      }
       return res.status(200).json({
         status: "invalid",
         message:

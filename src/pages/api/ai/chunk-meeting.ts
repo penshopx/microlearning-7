@@ -296,7 +296,7 @@ export default async function handler(
       missions: result.missions,
     });
   } catch (error) {
-    logOpenAIError("Source to mission error", error);
+    await logOpenAIError("Source to mission error", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);
