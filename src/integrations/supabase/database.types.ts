@@ -668,6 +668,7 @@ export type Database = {
           id: string
           last_position_seconds: number | null
           mission_progress: Json
+          mission_revision: number
           module_id: string | null
           progress_percentage: number | null
           quiz_attempts: number | null
@@ -684,6 +685,7 @@ export type Database = {
           id?: string
           last_position_seconds?: number | null
           mission_progress?: Json
+          mission_revision?: number
           module_id?: string | null
           progress_percentage?: number | null
           quiz_attempts?: number | null
@@ -700,6 +702,7 @@ export type Database = {
           id?: string
           last_position_seconds?: number | null
           mission_progress?: Json
+          mission_revision?: number
           module_id?: string | null
           progress_percentage?: number | null
           quiz_attempts?: number | null
@@ -1710,6 +1713,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      save_mission_progress: {
+        Args: {
+          p_course_id: string
+          p_module_id: string
+          p_status: string
+          p_progress_percentage: number | null
+          p_mission_progress: Json
+          p_expected_revision: number | null
+        }
+        Returns: Database["public"]["Tables"]["learner_progress"]["Row"]
+      }
+      reconcile_mission_evidence: {
+        Args: { p_abandon_path?: string | null }
+        Returns: { storage_path: string }[]
+      }
       award_achievement: {
         Args: {
           p_achievement_type: string

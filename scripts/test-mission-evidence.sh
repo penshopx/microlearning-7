@@ -32,3 +32,36 @@ for migration in \
   "${PSQL[@]}" -f "$ROOT/supabase/migrations/$migration" >/dev/null
 done
 "${PSQL[@]}" -f "$ROOT/supabase/tests/mission_evidence.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261101000000_add_supervisor_mission_reviews.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261102000000_mission_evidence_concurrency.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/tests/mission_evidence_concurrency.sql"
+
+# Real overlapping transactions (not just two snapshots in one connection).
+for action in upload replace delete; do
+  "${PSQL[@]}" -v action="$action" -f "$ROOT/supabase/tests/mission_evidence_race_setup.sql" >/dev/null
+  "${PSQL[@]}" >"$TEMP/session-a.log" 2>&1 <<'SQL' &
+BEGIN;
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000002', true);
+SELECT public.test_race_save('a');
+SELECT pg_sleep(0.4);
+COMMIT;
+SQL
+  a=$!
+  "${PSQL[@]}" >"$TEMP/session-b.log" 2>&1 <<'SQL' &
+BEGIN;
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000002', true);
+SELECT public.test_race_save('b');
+COMMIT;
+SQL
+  b=$!
+  if ! wait "$a" || ! wait "$b"; then
+    cat "$TEMP/session-a.log" "$TEMP/session-b.log"; exit 1
+  fi
+  "${PSQL[@]}" -c "SELECT public.test_assert(
+    (SELECT count(*) = 1 FROM public.test_race_results WHERE saved)
+    AND (SELECT count(*) = 1 FROM public.test_race_results WHERE NOT saved),
+    'overlapping $action has exactly one winner and one explicit conflict');" >/dev/null
+  echo "PASS: overlapping two-connection $action"
+done

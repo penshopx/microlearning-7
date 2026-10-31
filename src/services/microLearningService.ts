@@ -306,12 +306,23 @@ export const microLearningService = {
       lastPositionSeconds?: number;
       quizScore?: number;
       missionProgress?: MissionProgress;
+      expectedMissionRevision?: number;
+      awardCompletion?: boolean;
     }
   ) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { data: null, error: new Error("Not authenticated") };
 
-    const { data, error } = await supabase.rpc("upsert_learner_progress_atomic", {
+    const { data, error } = progressData.missionProgress
+      ? await supabase.rpc("save_mission_progress", {
+          p_course_id: courseId,
+          p_module_id: moduleId,
+          p_status: progressData.status,
+          p_progress_percentage: progressData.progressPercentage ?? null,
+          p_mission_progress: progressData.missionProgress,
+          p_expected_revision: progressData.expectedMissionRevision ?? null,
+        })
+      : await supabase.rpc("upsert_learner_progress_atomic", {
       p_course_id: courseId,
       p_module_id: moduleId,
       p_status: progressData.status,
@@ -323,7 +334,7 @@ export const microLearningService = {
     });
 
     // Award achievement if module completed
-    if (progressData.status === "completed") {
+    if (!error && data && progressData.status === "completed" && progressData.awardCompletion !== false) {
       await supabase.rpc("award_achievement", {
         p_user_id: user.id,
         p_achievement_type: "module_completed",
@@ -334,6 +345,19 @@ export const microLearningService = {
     }
 
     return { data, error };
+  },
+
+  /** Retry durable cleanup on every visit/mutation. Never delete an upload
+   * solely because its save response was lost: the server checks attachment. */
+  async reconcileEvidence(abandonPath?: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc("reconcile_mission_evidence", {
+      p_abandon_path: abandonPath ?? null,
+    });
+    if (error) return false;
+    const paths = (data || []).map((item: { storage_path: string }) => item.storage_path);
+    if (!paths.length) return true;
+    const { error: removeError } = await supabase.storage.from("mission-evidence").remove(paths);
+    return !removeError;
   },
 
   /**

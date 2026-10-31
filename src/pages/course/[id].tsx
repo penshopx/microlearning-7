@@ -118,6 +118,7 @@ export default function CoursePage() {
   const [legacySubmitted, setLegacySubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncRequired, setSyncRequired] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
   const [removingEvidenceId, setRemovingEvidenceId] = useState<string | null>(null);
@@ -131,6 +132,10 @@ export default function CoursePage() {
   const finalizingRef = useRef(false);
   const evidenceOperationRef = useRef(false);
   const viewerIdRef = useRef<string | null>(null);
+  const revisionRef = useRef<Record<string, number>>({});
+  const saveContextRef = useRef(0);
+  const saveBlockedRef = useRef(false);
+  const activeModuleRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -141,6 +146,8 @@ export default function CoursePage() {
       setViewerId(id);
       setCourse(null);
       setProgress([]);
+      revisionRef.current = {};
+      saveContextRef.current++;
       setMissionProgress(emptyMissionProgress());
       setEvidenceUrls({});
     };
@@ -170,7 +177,12 @@ export default function CoursePage() {
     ]).then(([courseResult, progressResult]) => {
       if (!active) return;
       if (courseResult.data) setCourse(courseResult.data);
-      if (progressResult.data) setProgress(progressResult.data);
+      if (progressResult.data) {
+        setProgress(progressResult.data);
+        revisionRef.current = Object.fromEntries(progressResult.data.map(
+          (row) => [row.module_id, row.mission_revision]
+        ));
+      }
       setLoading(false);
     });
 
@@ -179,7 +191,16 @@ export default function CoursePage() {
     };
   }, [courseId, viewerId]);
 
+  useEffect(() => {
+    if (!viewerId) return;
+    const cleanup = () => { void microLearningService.reconcileEvidence().catch(() => undefined); };
+    cleanup();
+    const timer = window.setInterval(cleanup, 60_000);
+    return () => window.clearInterval(timer);
+  }, [viewerId]);
+
   const currentModule = course?.modules?.[currentModuleIndex];
+  activeModuleRef.current = currentModule?.id;
   const moduleProgress = progress.find((item) => item.module_id === currentModule?.id);
   const mission = useMemo<WorkplaceMission | null>(() => {
     const missionContent = currentModule?.content?.find((item) => {
@@ -189,7 +210,8 @@ export default function CoursePage() {
     return normalizeWorkplaceMission(missionContent?.content_data);
   }, [currentModule]);
   const isResubmissionRequested = missionReview?.review_status === "resubmission_requested";
-  const evidenceEditable = moduleProgress?.status !== "completed" || isResubmissionRequested;
+  const evidenceEditable = !syncRequired &&
+    (moduleProgress?.status !== "completed" || isResubmissionRequested);
 
   useEffect(() => {
     let active = true;
@@ -208,6 +230,9 @@ export default function CoursePage() {
   }, [moduleProgress?.id]);
 
   useEffect(() => {
+    saveContextRef.current++;
+    saveBlockedRef.current = false;
+    setSyncRequired(false);
     setMissionProgress(normalizeMissionProgress(moduleProgress?.mission_progress));
     setLegacyAnswers({});
     setLegacySubmitted(false);
@@ -277,7 +302,7 @@ export default function CoursePage() {
   const requiredEvidenceItems = mission?.evidence.filter((item) => item.required) || [];
   const requiredEvidence = requiredEvidenceItems.length;
   const evidenceBusy = Boolean(uploadingEvidenceId || removingEvidenceId);
-  const missionLocked = moduleProgress?.status === "completed" || finalizing || evidenceBusy;
+  const missionLocked = moduleProgress?.status === "completed" || finalizing || evidenceBusy || syncRequired;
   const practiceComplete = practiceChecks.length > 0 &&
     practiceChecks.every((item) => missionProgress.checkedPracticeIds.includes(item.id));
   const decisionComplete = scenarioOptions.length === 0 || Boolean(missionProgress.selectedDecision);
@@ -297,16 +322,18 @@ export default function CoursePage() {
     next: MissionProgress,
     status: "in_progress" | "completed" = "in_progress"
   ): Promise<boolean> => {
-    if (!currentModule) return Promise.resolve(false);
+    if (!currentModule || saveBlockedRef.current) return Promise.resolve(false);
     if ((moduleProgress?.status === "completed" || finalizingRef.current) && status !== "completed") {
       return Promise.resolve(false);
     }
     const moduleId = currentModule.id;
+    const context = saveContextRef.current;
     const sequence = ++saveSequenceRef.current;
     setSaving(true);
     setErrorMessage("");
 
     const operation = saveQueueRef.current.then(async () => {
+      if (context !== saveContextRef.current || saveBlockedRef.current) return false;
       const nextPracticeComplete = practiceChecks.length > 0 &&
         practiceChecks.every((item) => next.checkedPracticeIds.includes(item.id));
       const nextDecisionComplete = scenarioOptions.length === 0 || Boolean(next.selectedDecision);
@@ -321,15 +348,47 @@ export default function CoursePage() {
         status,
         progressPercentage: status === "completed" ? 100 : completedPieces * 25,
         missionProgress: next,
+        expectedMissionRevision: revisionRef.current[moduleId] ?? 0,
+        awardCompletion: moduleProgress?.status !== "completed",
       });
+      if (context !== saveContextRef.current) return false;
 
       if (result.error || !result.data) {
-        setErrorMessage("Perubahan belum tersimpan. Coba lagi sebelum menutup halaman.");
+        // Invalidate already queued stale snapshots as well. A lost response is
+        // ambiguous, so reload rather than blindly retrying or deleting proof.
+        const refreshContext = ++saveContextRef.current;
+        saveBlockedRef.current = true;
+        setSyncRequired(true);
+        const latest = await microLearningService.getLearnerProgress(courseId);
+        if (refreshContext !== saveContextRef.current) return false;
+        if (latest.data && !latest.error) {
+          setProgress(latest.data);
+          revisionRef.current = Object.fromEntries(latest.data.map(
+            (row) => [row.module_id, row.mission_revision]
+          ));
+          if (activeModuleRef.current === moduleId) {
+            setMissionProgress(normalizeMissionProgress(
+              latest.data.find((row) => row.module_id === moduleId)?.mission_progress
+            ));
+          }
+          saveBlockedRef.current = false;
+          setSyncRequired(false);
+        }
+        setErrorMessage(result.error && "code" in result.error && result.error.code === "40001"
+          ? "Progres berubah di tab atau perangkat lain. Perubahan ini tidak disimpan. Data terbaru dimuat; periksa lalu ulangi perubahanmu."
+          : "Penyimpanan belum dapat dipastikan. Periksa data terbaru sebelum mencoba lagi. Jika belum dimuat, muat ulang halaman.");
         return false;
       }
 
+      revisionRef.current[moduleId] = result.data.mission_revision;
       setProgress((current) => mergeProgress(current, result.data));
       return true;
+    }).catch(() => {
+      saveContextRef.current++;
+      saveBlockedRef.current = true;
+      setSyncRequired(true);
+      setErrorMessage("Penyimpanan belum dapat dipastikan. Muat ulang halaman sebelum mencoba lagi.");
+      return false;
     }).finally(() => {
       if (sequence === saveSequenceRef.current) setSaving(false);
     });
@@ -339,7 +398,7 @@ export default function CoursePage() {
   };
 
   const togglePracticeCheck = (checkId: string) => {
-    if (evidenceOperationRef.current || finalizingRef.current || moduleProgress?.status === "completed") return;
+    if (saveBlockedRef.current || evidenceOperationRef.current || finalizingRef.current || moduleProgress?.status === "completed") return;
     setMissionProgress((current) => {
       const checked = current.checkedPracticeIds.includes(checkId);
       const next = {
@@ -354,7 +413,7 @@ export default function CoursePage() {
   };
 
   const chooseDecision = (option: string) => {
-    if (evidenceOperationRef.current || finalizingRef.current || moduleProgress?.status === "completed") return;
+    if (saveBlockedRef.current || evidenceOperationRef.current || finalizingRef.current || moduleProgress?.status === "completed") return;
     setMissionProgress((current) => {
       const next = { ...current, selectedDecision: option };
       void persistMissionProgress(next);
@@ -375,7 +434,7 @@ export default function CoursePage() {
     input.value = "";
     if (!file || !currentModule || !mission) return;
     if (
-      evidenceOperationRef.current ||
+      saveBlockedRef.current || evidenceOperationRef.current ||
       finalizingRef.current ||
       (moduleProgress?.status === "completed" && !isResubmissionRequested)
     ) return;
@@ -411,6 +470,8 @@ export default function CoursePage() {
     setErrorMessage("");
     setCompletionMessage("");
 
+    const uploadContext = saveContextRef.current;
+    let uploadedPath: string | undefined;
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -437,10 +498,9 @@ export default function CoursePage() {
         setErrorMessage(`Bukti belum tersimpan: ${uploadError.message}`);
         return;
       }
+      uploadedPath = storagePath;
+      if (uploadContext !== saveContextRef.current) return;
 
-      const previousUpload = missionProgress.evidenceUploads.find(
-        (upload) => upload.evidenceId === evidenceId
-      );
       const nextUploads: MissionEvidenceUpload[] = [
         ...missionProgress.evidenceUploads.filter((upload) => upload.evidenceId !== evidenceId),
         {
@@ -457,13 +517,10 @@ export default function CoursePage() {
         evidenceUploads: nextUploads,
         evidenceConfirmed: hasRequiredEvidence(nextUploads),
       };
-      const previous = missionProgress;
       setMissionProgress(next);
-      const saved = await persistMissionProgress(next);
+      const saved = await persistMissionProgress(next, isResubmissionRequested ? "completed" : "in_progress");
 
       if (!saved) {
-        await supabase.storage.from(MISSION_EVIDENCE_BUCKET).remove([storagePath]);
-        setMissionProgress(previous);
         return;
       }
 
@@ -479,20 +536,17 @@ export default function CoursePage() {
         setMissionReview(submitted);
       }
 
-      if (previousUpload) {
-        const { error: cleanupError } = await supabase.storage
-          .from(MISSION_EVIDENCE_BUCKET)
-          .remove([previousUpload.storagePath]);
-        if (cleanupError) {
-          setErrorMessage("Bukti baru tersimpan, tetapi file lama belum terhapus.");
-        }
-      }
       setCompletionMessage(isResubmissionRequested
         ? "Bukti diperbarui dan dikirim kembali untuk ditinjau."
         : "Bukti praktik berhasil disimpan.");
     } catch {
       setErrorMessage("Bukti belum tersimpan karena koneksi bermasalah. Coba lagi.");
     } finally {
+      if (uploadedPath) {
+        const cleaned = await microLearningService.reconcileEvidence(uploadedPath).catch(() => false);
+        if (!cleaned) setErrorMessage((current) => current ||
+          "Pembersihan file tertunda dan akan dicoba kembali otomatis. Bukti yang tersimpan tetap aman.");
+      }
       evidenceOperationRef.current = false;
       setUploadingEvidenceId(null);
     }
@@ -500,7 +554,7 @@ export default function CoursePage() {
 
   const handleRemoveEvidence = async (evidenceId: string) => {
     if (
-      evidenceOperationRef.current ||
+      saveBlockedRef.current || evidenceOperationRef.current ||
       finalizingRef.current ||
       moduleProgress?.status === "completed"
     ) return;
@@ -516,7 +570,6 @@ export default function CoursePage() {
       const nextUploads = missionProgress.evidenceUploads.filter(
         (item) => item.evidenceId !== evidenceId
       );
-      const previous = missionProgress;
       const next = {
         ...missionProgress,
         evidenceUploads: nextUploads,
@@ -526,15 +579,12 @@ export default function CoursePage() {
       const saved = await persistMissionProgress(next);
 
       if (!saved) {
-        setMissionProgress(previous);
         return;
       }
 
-      const { error: removeError } = await supabase.storage
-        .from(MISSION_EVIDENCE_BUCKET)
-        .remove([upload.storagePath]);
-      if (removeError) {
-        setErrorMessage("Bukti dihapus dari progres, tetapi file lama belum terhapus.");
+      const cleaned = await microLearningService.reconcileEvidence();
+      if (!cleaned) {
+        setErrorMessage("Bukti dihapus dari progres. Pembersihan file tertunda dan akan dicoba kembali otomatis.");
         return;
       }
       setCompletionMessage("Bukti praktik dihapus.");
@@ -547,7 +597,7 @@ export default function CoursePage() {
   };
 
   const completeMission = async () => {
-    if (evidenceOperationRef.current || !canCompleteMission) return;
+    if (saveBlockedRef.current || evidenceOperationRef.current || !canCompleteMission) return;
     finalizingRef.current = true;
     setFinalizing(true);
     const saved = await persistMissionProgress(missionProgress, "completed");
@@ -595,6 +645,7 @@ export default function CoursePage() {
     const result = await missionReviewService.restartPractice(moduleProgress.id);
     if (result.error || !result.data) throw new Error("Praktik belum dapat dibuka ulang. Muat ulang lalu coba lagi.");
     setProgress((current) => mergeProgress(current, result.data));
+    revisionRef.current[result.data.module_id!] = result.data.mission_revision;
     setMissionProgress(normalizeMissionProgress(result.data.mission_progress));
     setFinalizing(false);
     finalizingRef.current = false;
