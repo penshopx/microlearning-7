@@ -23,6 +23,8 @@ import {
   Upload,
 } from "lucide-react";
 import { SEO } from "@/components/SEO";
+import { useAuth } from "@/hooks/useAuth";
+import { formatTimestamp } from "@/lib/supervisorReview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -39,6 +41,11 @@ import {
   type MissionEvidenceUpload,
   type WorkplaceMission,
 } from "@/services/microLearningService";
+import {
+  supervisorReviewService,
+  type MissionReviewComment,
+  type MissionReview,
+} from "@/services/supervisorReviewService";
 
 type ModuleContent = Database["public"]["Tables"]["module_content"]["Row"];
 type ModuleQuiz = Database["public"]["Tables"]["module_quizzes"]["Row"];
@@ -97,6 +104,7 @@ function mergeProgress(
 
 export default function CoursePage() {
   const router = useRouter();
+  const { user } = useAuth();
   const courseId = typeof router.query.id === "string" ? router.query.id : "";
   const [course, setCourse] = useState<Course | null>(null);
   const [progress, setProgress] = useState<LearnerProgress[]>([]);
@@ -110,6 +118,8 @@ export default function CoursePage() {
   const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
   const [removingEvidenceId, setRemovingEvidenceId] = useState<string | null>(null);
   const [evidenceUrls, setEvidenceUrls] = useState<Record<string, string>>({});
+  const [missionReview, setMissionReview] = useState<MissionReview | null>(null);
+  const [missionReviewComments, setMissionReviewComments] = useState<MissionReviewComment[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [completionMessage, setCompletionMessage] = useState("");
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -146,6 +156,24 @@ export default function CoursePage() {
     });
     return normalizeWorkplaceMission(missionContent?.content_data);
   }, [currentModule]);
+  const isResubmissionRequested = missionReview?.review_status === "resubmission_requested";
+  const evidenceEditable = moduleProgress?.status !== "completed" || isResubmissionRequested;
+
+  useEffect(() => {
+    let active = true;
+    setMissionReview(null);
+    setMissionReviewComments([]);
+    if (!moduleProgress?.id) return () => { active = false; };
+    void supervisorReviewService.getReview(moduleProgress.id).then(async ({ data }) => {
+      if (!active) return;
+      setMissionReview(data);
+      if (data) {
+        const { data: comments } = await supervisorReviewService.getComments(data.id);
+        if (active && comments) setMissionReviewComments(comments);
+      }
+    });
+    return () => { active = false; };
+  }, [moduleProgress?.id]);
 
   useEffect(() => {
     setMissionProgress(normalizeMissionProgress(moduleProgress?.mission_progress));
@@ -317,7 +345,7 @@ export default function CoursePage() {
     if (
       evidenceOperationRef.current ||
       finalizingRef.current ||
-      moduleProgress?.status === "completed"
+      (moduleProgress?.status === "completed" && !isResubmissionRequested)
     ) return;
 
     const evidence = mission.evidence.find((item) => item.id === evidenceId);
@@ -407,6 +435,18 @@ export default function CoursePage() {
         return;
       }
 
+      if (isResubmissionRequested && moduleProgress?.id) {
+        const { data: submitted, error: submitError } = await supabase.rpc(
+          "submit_mission_resubmission",
+          { p_learner_progress_id: moduleProgress.id }
+        );
+        if (submitError || !submitted) {
+          setErrorMessage("Bukti tersimpan, tetapi pengiriman ulang belum tercatat. Ganti bukti lagi untuk mencoba.");
+          return;
+        }
+        setMissionReview(submitted);
+      }
+
       if (previousUpload) {
         const { error: cleanupError } = await supabase.storage
           .from(MISSION_EVIDENCE_BUCKET)
@@ -415,7 +455,9 @@ export default function CoursePage() {
           setErrorMessage("Bukti baru tersimpan, tetapi file lama belum terhapus.");
         }
       }
-      setCompletionMessage("Bukti praktik berhasil disimpan.");
+      setCompletionMessage(isResubmissionRequested
+        ? "Bukti diperbarui dan dikirim kembali untuk ditinjau."
+        : "Bukti praktik berhasil disimpan.");
     } catch {
       setErrorMessage("Bukti belum tersimpan karena koneksi bermasalah. Coba lagi.");
     } finally {
@@ -579,6 +621,14 @@ export default function CoursePage() {
                 <Progress value={overallProgress} className="mt-3 h-2" />
               </div>
             </div>
+            {course.user_id === user?.id && (
+              <Link
+                href="/coaching"
+                className="mt-4 inline-flex items-center gap-2 rounded-lg border border-blue-300/25 bg-blue-400/10 px-4 py-2 text-sm font-medium text-blue-100 hover:bg-blue-400/20"
+              >
+                Tinjau bukti peserta
+              </Link>
+            )}
           </div>
         </header>
 
@@ -825,7 +875,7 @@ export default function CoursePage() {
                                       Lihat file
                                     </a>
                                   )}
-                                  {!missionLocked && (
+                                  {evidenceEditable && !finalizing && (
                                     <label className="inline-flex cursor-pointer items-center rounded-md border border-white/15 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/10">
                                       <Upload className="mr-1.5 h-3.5 w-3.5" />
                                       {isUploading ? "Mengunggah..." : "Ganti"}
@@ -842,7 +892,7 @@ export default function CoursePage() {
                                       />
                                     </label>
                                   )}
-                                  {!missionLocked && (
+                                  {!missionLocked && moduleProgress?.status !== "completed" && (
                                     <Button
                                       type="button"
                                       variant="ghost"
@@ -874,7 +924,7 @@ export default function CoursePage() {
                                   type="file"
                                   className="sr-only"
                                   accept={getEvidenceAccept(evidence.type)}
-                                  disabled={missionLocked || isUploading || isRemoving}
+                                  disabled={!evidenceEditable || finalizing || isUploading || isRemoving}
                                   onChange={(event) => void handleEvidenceUpload(
                                     evidence.id,
                                     event.currentTarget.files?.[0] || null,
@@ -951,6 +1001,83 @@ export default function CoursePage() {
                       </p>
                     )}
                   </Card>
+
+                  {missionReview && (
+                    <Card className={`border p-6 ${
+                      missionReview.review_status === "completed"
+                        ? "border-emerald-300/20 bg-emerald-950/30"
+                        : missionReview.review_status === "resubmission_requested"
+                          ? "border-amber-300/20 bg-amber-950/30"
+                          : "border-blue-300/20 bg-blue-950/30"
+                    }`}>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-blue-200">
+                        Coaching supervisor
+                      </p>
+                      <h3 className="mt-2 text-xl font-bold">
+                        {missionReview.review_status === "completed"
+                          ? "Feedback untuk praktikmu"
+                          : missionReview.review_status === "resubmission_requested"
+                            ? "Supervisor meminta bukti diperbarui"
+                            : "Bukti sedang menunggu review"}
+                      </h3>
+                      {missionReview.review_status === "resubmission_requested" && (
+                        <p className="mt-2 text-sm text-amber-100">
+                          Ganti bukti yang diminta supervisor untuk mengirim ulang praktik ini.
+                        </p>
+                      )}
+                      {missionReview.review_status === "pending" && (
+                        <p className="mt-2 text-sm text-slate-300">
+                          Feedback akan muncul di sini setelah supervisor meninjau bukti.
+                        </p>
+                      )}
+                      {missionReview.glow_feedback && (
+                        <div className="mt-5">
+                          <p className="text-sm font-semibold text-emerald-200">Yang sudah baik</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{missionReview.glow_feedback}</p>
+                        </div>
+                      )}
+                      {missionReview.grow_feedback && (
+                        <div className="mt-4">
+                          <p className="text-sm font-semibold text-amber-200">Yang perlu ditingkatkan</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-200">{missionReview.grow_feedback}</p>
+                        </div>
+                      )}
+                      {missionReview.next_steps && (
+                        <div className="mt-4 rounded-lg border border-blue-300/20 bg-blue-300/10 p-4">
+                          <p className="text-sm font-semibold text-blue-100">Fokus praktik berikutnya</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-100">{missionReview.next_steps}</p>
+                        </div>
+                      )}
+                      {missionReviewComments.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-sm font-semibold text-blue-200">Catatan pada rekaman</p>
+                          <ul className="mt-2 space-y-2">
+                            {missionReviewComments.map((comment) => {
+                              const timestamp = formatTimestamp(comment.timestamp_seconds);
+                              const mediaUrl = evidenceUrls[comment.evidence_id];
+                              return (
+                                <li key={comment.id}>
+                                  <a
+                                    href={mediaUrl
+                                      ? `${mediaUrl}#t=${comment.timestamp_seconds}`
+                                      : undefined}
+                                    target={mediaUrl ? "_blank" : undefined}
+                                    rel={mediaUrl ? "noreferrer" : undefined}
+                                    className="flex items-start gap-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm"
+                                  >
+                                    <span className="shrink-0 rounded bg-blue-400/15 px-2 py-1 font-mono text-xs text-blue-200">
+                                      {timestamp}
+                                    </span>
+                                    <span className="text-slate-200">{comment.comment_text}</span>
+                                  </a>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                    </Card>
+                  )}
                 </>
               ) : (
                 <Card className="border-white/10 bg-slate-900 p-6">

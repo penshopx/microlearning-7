@@ -726,6 +726,97 @@ export type Database = {
           },
         ]
       }
+      mission_reviews: {
+        Row: {
+          created_at: string
+          evidence_snapshot: Json
+          glow_feedback: string
+          grow_feedback: string
+          id: string
+          learner_progress_id: string
+          next_steps: string
+          overall_rating: number | null
+          reviewed_at: string | null
+          review_status: string
+          reviewer_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          evidence_snapshot?: Json
+          glow_feedback: string
+          grow_feedback: string
+          id?: string
+          learner_progress_id: string
+          next_steps: string
+          overall_rating?: number | null
+          reviewed_at?: string | null
+          review_status: string
+          reviewer_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          evidence_snapshot?: Json
+          glow_feedback?: string
+          grow_feedback?: string
+          id?: string
+          learner_progress_id?: string
+          next_steps?: string
+          overall_rating?: number | null
+          reviewed_at?: string | null
+          review_status?: string
+          reviewer_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mission_reviews_learner_progress_id_fkey"
+            columns: ["learner_progress_id"]
+            isOneToOne: true
+            referencedRelation: "learner_progress"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mission_review_comments: {
+        Row: {
+          comment_text: string
+          created_at: string
+          evidence_id: string
+          id: string
+          reviewer_id: string
+          review_id: string
+          timestamp_seconds: number
+        }
+        Insert: {
+          comment_text: string
+          created_at?: string
+          evidence_id: string
+          id?: string
+          reviewer_id: string
+          review_id: string
+          timestamp_seconds: number
+        }
+        Update: {
+          comment_text?: string
+          created_at?: string
+          evidence_id?: string
+          id?: string
+          reviewer_id?: string
+          review_id?: string
+          timestamp_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mission_review_comments_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "mission_reviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_chat: {
         Row: {
           created_at: string | null
@@ -1655,6 +1746,10 @@ export type Database = {
           p_time_spent_seconds?: number | null
         }
         Returns: Database["public"]["Tables"]["learner_progress"]["Row"]
+      }
+      submit_mission_resubmission: {
+        Args: { p_learner_progress_id: string }
+        Returns: Database["public"]["Tables"]["mission_reviews"]["Row"]
       }
     }
     Enums: {
