@@ -5,3 +5,4 @@
 - [Pages Router component tests](pages-router-component-tests.md) — keep tests out of route folders; use the project’s OXC and happy-dom setup for TSX tests.
 - [AI incident storage scope](ai-incident-storage-scope.md) — current alerts are process-local; shared durable storage is needed before relying on them across replicas or restarts.
 - [Supervisor evidence consent](supervisor-evidence-consent.md) — course authorship is not a supervisory relationship; proof access needs explicit participant-scoped authorization.
+- [Upsert trigger ordering](upsert-trigger-ordering.md) — INSERT triggers run before conflict handling; evidence validation can reject omitted fields before stored state is merged.

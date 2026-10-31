@@ -9,6 +9,7 @@
     "start": "next start -p 5000 -H 0.0.0.0",
     "lint": "next lint",
     "test": "vitest run",
+    "test:integration:evidence": "bash scripts/test-mission-evidence.sh",
     "audit": "npm audit --audit-level=high",
     "postinstall": "npm run audit"
   },

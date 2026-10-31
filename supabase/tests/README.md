@@ -1,4 +1,35 @@
-# Supervisor review checks
+# Database integration checks
+
+## Mission evidence completion
+
+Run `npm run test:integration:evidence` with PostgreSQL binaries (`initdb`,
+`pg_ctl`, `psql`) on PATH as a non-root user. No credentials, remote database,
+Docker, or Supabase CLI are required. Missing binaries or failed assertions exit
+nonzero; the suite does not silently skip.
+
+The runner reuses the minimal surrounding Supabase schema in
+`mission_reviews_fixture.sql`, applies the actual progress, evidence, and scoped
+assignment/review migrations, then runs `mission_evidence.sql` as `authenticated`
+with JWT subject settings. It checks fabricated uploads, another user's existing
+object, wrong course/module/evidence namespaces, a prefix collision, wrong bucket,
+wrong evidence ID, missing/malformed uploads, valid completion, completed-row
+tampering, legacy completion, and owner Storage SELECT/INSERT/DELETE rules.
+Rejection checks exercise both direct writes and the same atomic RPC the app uses,
+for new progress and saved drafts, and require the exact evidence-trigger error.
+
+All fixtures run inside a rolled-back transaction, with explicit empty-table
+checks afterward. An exit trap also stops and deletes the disposable cluster on
+success or failure. The bucket created by the migration exists only in that
+cluster. No shared remote data is modified.
+
+This is database integration coverage: Storage objects are actual
+`storage.objects` rows subject to RLS, not mocked query results, but no physical
+files or HTTP Storage API are involved. It does not validate the Storage server,
+MIME/size enforcement, signed URLs, or remote-schema drift. It is separate from
+`npm test` so unit tests remain usable without PostgreSQL.
+It is also registered as the `mission-evidence-integration` validation workflow.
+
+## Supervisor reviews
 
 Run `bash scripts/test-mission-reviews.sh` with PostgreSQL binaries on PATH.
 It starts a disposable local cluster, applies the evidence/progress/review
