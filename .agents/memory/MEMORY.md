@@ -2,3 +2,4 @@
 - [Workplace Coach positioning](workplace-coach-positioning.md) — microlearning is cross-industry; construction is the first domain pack, not the product boundary.
 - [Next build and preview order](next-build-preview-order.md) — restart Next dev after production builds before judging preview failures.
 - [AI output validation order](ai-output-validation-order.md) — validate required raw AI fields before tolerant normalization, or defaults can hide contract drift.
+- [Pages Router component tests](pages-router-component-tests.md) — keep tests out of route folders; use the project’s OXC and happy-dom setup for TSX tests.
