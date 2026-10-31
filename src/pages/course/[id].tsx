@@ -31,6 +31,9 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
+import { missionReviewService } from "@/services/missionReviewService";
+import { MissionReviewPanel } from "@/components/mission/MissionReviewPanel";
+import { ParticipantReviewStatus } from "@/components/mission/ParticipantReviewStatus";
 import type { Database } from "@/integrations/supabase/types";
 import {
   emptyMissionProgress,
@@ -107,6 +110,7 @@ export default function CoursePage() {
   const { user } = useAuth();
   const courseId = typeof router.query.id === "string" ? router.query.id : "";
   const [course, setCourse] = useState<Course | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
   const [progress, setProgress] = useState<LearnerProgress[]>([]);
   const [currentModuleIndex, setCurrentModuleIndex] = useState(0);
   const [missionProgress, setMissionProgress] = useState<MissionProgress>(emptyMissionProgress);
@@ -126,6 +130,34 @@ export default function CoursePage() {
   const saveSequenceRef = useRef(0);
   const finalizingRef = useRef(false);
   const evidenceOperationRef = useRef(false);
+  const viewerIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let authEventReceived = false;
+    const updateViewer = (id: string | null) => {
+      if (!active || viewerIdRef.current === id) return;
+      viewerIdRef.current = id;
+      setViewerId(id);
+      setCourse(null);
+      setProgress([]);
+      setMissionProgress(emptyMissionProgress());
+      setEvidenceUrls({});
+    };
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!authEventReceived) updateViewer(data.user?.id ?? null);
+    }).catch(() => {
+      if (!authEventReceived) updateViewer(null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      authEventReceived = true;
+      updateViewer(session?.user?.id ?? null);
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (!courseId) return;
@@ -145,7 +177,7 @@ export default function CoursePage() {
     return () => {
       active = false;
     };
-  }, [courseId]);
+  }, [courseId, viewerId]);
 
   const currentModule = course?.modules?.[currentModuleIndex];
   const moduleProgress = progress.find((item) => item.module_id === currentModule?.id);
@@ -558,6 +590,17 @@ export default function CoursePage() {
     }
   };
 
+  const restartPractice = async () => {
+    if (!moduleProgress || saving || evidenceOperationRef.current) return;
+    const result = await missionReviewService.restartPractice(moduleProgress.id);
+    if (result.error || !result.data) throw new Error("Praktik belum dapat dibuka ulang. Muat ulang lalu coba lagi.");
+    setProgress((current) => mergeProgress(current, result.data));
+    setMissionProgress(normalizeMissionProgress(result.data.mission_progress));
+    setFinalizing(false);
+    finalizingRef.current = false;
+    setCompletionMessage("Praktik dibuka ulang. Perbaiki bukti sesuai arahan supervisor, lalu selesaikan kembali.");
+  };
+
   const selectModule = (index: number) => {
     setCurrentModuleIndex(index);
     setMissionProgress(emptyMissionProgress());
@@ -633,6 +676,15 @@ export default function CoursePage() {
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          <MissionReviewPanel courseId={courseId} isOwner={viewerId === course.user_id} />
+          {mission && moduleProgress && (
+            <ParticipantReviewStatus
+              key={moduleProgress.id}
+              progressId={moduleProgress.id}
+              isSubmitted={moduleProgress.status === "completed"}
+              onRetry={moduleProgress.status === "completed" ? restartPractice : undefined}
+            />
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-8">
             <div className="space-y-6">
               <Card className="overflow-hidden border-white/10 bg-slate-900">
