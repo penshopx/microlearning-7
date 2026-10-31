@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
-import { getOpenAIErrorResponse } from "@/lib/openai-error";
+import { getOpenAIErrorResponse, logOpenAIError } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -167,7 +167,7 @@ Hasilkan JSON lengkap dengan format:
 
     return res.status(200).json({ success: true, data: parsed, type });
   } catch (error) {
-    console.error("Competency AI generation error:", error);
+    logOpenAIError("Competency AI generation error", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);

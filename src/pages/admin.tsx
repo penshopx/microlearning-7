@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { AIHealthResponse } from "@/pages/api/ai/health";
 import { fetchAI } from "@/lib/ai-client";
+import { AI_AUTH_INCIDENT_UPDATED_EVENT } from "@/lib/ai-auth-incident";
 import {
   ShieldCheck,
   ShieldAlert,
@@ -77,6 +78,7 @@ export default function AdminPage() {
 
       const data: AIHealthResponse = await res.json();
       setHealth({ state: "done", result: data, errorMessage: null });
+      window.dispatchEvent(new Event(AI_AUTH_INCIDENT_UPDATED_EVENT));
     } catch (err) {
       setHealth({
         state: "error",

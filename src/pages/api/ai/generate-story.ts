@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
-import { getOpenAIErrorResponse } from "@/lib/openai-error";
+import { getOpenAIErrorResponse, logOpenAIError } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -175,7 +175,7 @@ IMPORTANT: Return ONLY valid JSON, no markdown formatting.`;
 
     return res.status(200).json(story);
   } catch (error) {
-    console.error("Story generation error:", error);
+    logOpenAIError("Story generation error", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse?.status === 503) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);

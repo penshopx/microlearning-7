@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { recordAIAuthFailure } from "@/lib/server/ai-auth-failures";
 import {
   AI_ADMIN_URL,
   AI_API_KEY_ERROR_CODE,
@@ -68,6 +69,7 @@ export function classifyOpenAIError(err: unknown): OpenAIErrorInfo {
   const errorMessage = err instanceof Error ? err.message : "";
 
   if (status === 401) {
+    recordAIAuthFailure(err as object);
     return {
       isApiKeyError: true,
       isQuotaError: false,
@@ -126,4 +128,10 @@ export function classifyOpenAIError(err: unknown): OpenAIErrorInfo {
     userMessage: "",
     code: "other",
   };
+}
+
+/** Never log the SDK error: it may include credentials or response bodies. */
+export function logOpenAIError(context: string, err: unknown): void {
+  const info = classifyOpenAIError(err);
+  console.error(context, { code: info.code });
 }

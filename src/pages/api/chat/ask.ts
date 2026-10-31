@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
-import { classifyOpenAIError } from "@/lib/openai-error";
+import { classifyOpenAIError, logOpenAIError } from "@/lib/openai-error";
 import { initSSE, sseChunk, sseEvent, sseDone, sseError } from "@/lib/sse";
 
 export const config = { api: { responseLimit: false } };
@@ -58,7 +58,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (aiErr.isAIUnavailable) {
         fullReply = `⚠️ ${aiErr.userMessage}`;
       } else {
-        console.error("OpenAI API error, falling back to knowledge base:", error);
+        logOpenAIError("OpenAI API error, falling back to knowledge base", error);
         fullReply = generateSmartResponse(message);
       }
       sseChunk(res, fullReply);
@@ -81,7 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
     sseDone(res);
   } catch (error) {
-    console.error("Chat API error:", error);
+    logOpenAIError("Chat API error", error);
     sseError(res, "Maaf, ada sedikit gangguan. Bisa Kamu ulangi pertanyaannya?");
   }
 }

@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { getOpenAIErrorResponse } from "@/lib/openai-error";
+import { getOpenAIErrorResponse, logOpenAIError } from "@/lib/openai-error";
 import {
   DEFAULT_WORKPLACE_TRACK,
   WORKPLACE_MISSION_VERSION,
@@ -296,7 +296,7 @@ export default async function handler(
       missions: result.missions,
     });
   } catch (error) {
-    console.error("Source to mission error:", error);
+    logOpenAIError("Source to mission error", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);

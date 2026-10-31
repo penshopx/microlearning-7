@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "@/integrations/supabase/client";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 
 export default function AuthCallback() {
@@ -11,11 +13,29 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+        let callbackSession = null;
+        if (code) {
+          // Supabase may already have exchanged a PKCE code during client
+          // initialization. Reuse that session before attempting a manual exchange.
+          const { data, error } = await supabase.auth.getSession();
+          if (error) throw error;
+          callbackSession = data.session;
+          if (!callbackSession) {
+            const { data: exchanged, error: exchangeError } =
+              await supabase.auth.exchangeCodeForSession(url.toString());
+            if (exchangeError) throw exchangeError;
+            callbackSession = exchanged.session;
+          }
+        }
+
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
 
         if (error) {
           throw error;
         }
+        const session = callbackSession || currentSession;
 
         if (session) {
           setStatus("success");
@@ -24,7 +44,7 @@ export default function AuthCallback() {
             router.replace("/");
           }, 1500);
         } else {
-          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const hashParams = new URLSearchParams(url.hash.substring(1));
           const accessToken = hashParams.get("access_token");
           const refreshToken = hashParams.get("refresh_token");
 
@@ -45,13 +65,9 @@ export default function AuthCallback() {
             throw new Error("Sesi tidak ditemukan");
           }
         }
-      } catch (err: any) {
-        console.error("Auth callback error:", err);
+      } catch {
         setStatus("error");
-        setMessage(err?.message || "Gagal memproses autentikasi");
-        setTimeout(() => {
-          router.replace("/auth");
-        }, 3000);
+        setMessage("Tautan verifikasi tidak valid atau sudah kedaluwarsa. Minta tautan baru lalu coba lagi.");
       }
     };
 
@@ -72,7 +88,12 @@ export default function AuthCallback() {
         )}
         <p className="text-lg text-gray-300">{message}</p>
         {status === "error" && (
-          <p className="text-sm text-gray-500">Mengalihkan ke halaman login...</p>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">Coba daftar atau masuk kembali untuk meminta tautan baru.</p>
+            <Link href="/auth">
+              <Button variant="outline">Kembali ke login</Button>
+            </Link>
+          </div>
         )}
       </div>
     </div>

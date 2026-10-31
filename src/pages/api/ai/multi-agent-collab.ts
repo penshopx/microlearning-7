@@ -9,7 +9,7 @@
    3. A synthesis agent combines their insights into actionable conclusions */
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { classifyOpenAIError, getOpenAIErrorResponse } from "@/lib/openai-error";
+import { classifyOpenAIError, getOpenAIErrorResponse, logOpenAIError } from "@/lib/openai-error";
 import OpenAI from "openai";
 import { AGENTS } from "@/lib/agents-data";
 import type { AgentId } from "@/lib/agents-data";
@@ -284,7 +284,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       return res.status(200).json(await buildNonStreamingResponse(message, history, sessionId, memoryContext));
     } catch (err) {
-      console.error("Multi-agent collab error:", err);
+      logOpenAIError("Multi-agent collab error", err);
       const aiErrorResponse = getOpenAIErrorResponse(err);
       if (aiErrorResponse) {
         return res.status(aiErrorResponse.status).json(aiErrorResponse.body);
@@ -306,7 +306,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const followupsPromise = generateFollowups(message, AbortSignal.timeout(4000)).catch(err => {
       const aiErr = classifyOpenAIError(err);
       if (aiErr.isApiKeyError) throw err;
-      console.warn("Multi-agent collab follow-up generation failed:", err);
+      logOpenAIError("Multi-agent collab follow-up generation failed", err);
       return [] as string[];
     });
 
@@ -390,7 +390,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     sseDone(res);
 
   } catch (err) {
-    console.error("Multi-agent collab error:", err);
+    logOpenAIError("Multi-agent collab error", err);
     const aiErr = classifyOpenAIError(err);
     sseError(
       res,

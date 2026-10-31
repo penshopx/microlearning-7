@@ -1,5 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import {
+  clearAIAuthFailures,
+  getAIAuthFailureSequence,
+  recordAIAuthFailure,
+} from "@/lib/server/ai-auth-failures";
 
 export type AIHealthStatus = "ok" | "missing" | "invalid" | "unreachable";
 
@@ -22,6 +27,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<AIHealthResponse | { error: string }>
 ) {
+  res.setHeader("Cache-Control", "no-store");
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -71,14 +77,17 @@ export default async function handler(
   const modelsUrl = baseURL
     ? `${baseURL.replace(/\/$/, "")}/models`
     : "https://api.openai.com/v1/models";
+  const checkedSequence = getAIAuthFailureSequence();
 
   try {
     const response = await fetch(modelsUrl, {
       method: "GET",
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (response.ok) {
+      clearAIAuthFailures(checkedSequence);
       return res.status(200).json({
         status: "ok",
         message: "AI integration key is valid and the provider is reachable.",
@@ -87,6 +96,7 @@ export default async function handler(
     }
 
     if (response.status === 401) {
+      recordAIAuthFailure({});
       return res.status(200).json({
         status: "invalid",
         message:
@@ -96,10 +106,10 @@ export default async function handler(
       });
     }
 
-    // Other HTTP errors (rate-limit, 5xx) — key likely fine, provider issue.
+    // A non-success response cannot prove recovery or clear an active alert.
     return res.status(200).json({
-      status: "ok",
-      message: `Provider responded with HTTP ${response.status}; key appears configured.`,
+      status: "unreachable",
+      message: `Provider responded with HTTP ${response.status}; health check did not succeed.`,
       checkedAt,
     });
   } catch {
@@ -109,7 +119,7 @@ export default async function handler(
       message:
         "Could not reach the AI provider endpoint. " +
         (baseURL
-          ? `Check that AI_INTEGRATIONS_OPENAI_BASE_URL (${baseURL}) is correct.`
+          ? "Check that AI_INTEGRATIONS_OPENAI_BASE_URL is correct."
           : "Check your network connectivity or OpenAI service status."),
       checkedAt,
     });

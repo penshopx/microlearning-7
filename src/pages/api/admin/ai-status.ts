@@ -1,7 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { getAIAuthIncident } from "@/lib/server/ai-auth-failures";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  res.setHeader("Cache-Control", "no-store");
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -43,9 +45,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
     const hasBaseUrl = !!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
 
-    return res.status(200).json({ hasKey, hasBaseUrl });
+    return res.status(200).json({ hasKey, hasBaseUrl, authFailureIncident: getAIAuthIncident() });
   } catch (err) {
-    console.error("ai-status check error:", err);
+    console.error("ai-status check failed");
     return res.status(500).json({ error: "Internal error" });
   }
 }

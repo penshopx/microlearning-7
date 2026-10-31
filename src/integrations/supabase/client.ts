@@ -2,7 +2,11 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const SUPABASE_PUBLISHABLE_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  '';
+export const isSupabaseConfigured = !!(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
 
 function createNoopProxy(): SupabaseClient<Database> {
   const noopResult = { data: null, error: null, count: null, status: 200, statusText: 'OK' };
@@ -34,7 +38,7 @@ function createNoopProxy(): SupabaseClient<Database> {
 
 let supabase: SupabaseClient<Database>;
 
-if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+if (!isSupabaseConfigured) {
   console.warn('Missing Supabase environment variables. Supabase features will not work until NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are configured.');
   supabase = createNoopProxy();
 } else {

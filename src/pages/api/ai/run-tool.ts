@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { AI_TOOLS } from "@/lib/tools-data";
-import { classifyOpenAIError } from "@/lib/openai-error";
+import { classifyOpenAIError, logOpenAIError } from "@/lib/openai-error";
 import { initSSE, sseChunk, sseEvent, sseDone, sseError } from "@/lib/sse";
 
 export const config = { api: { responseLimit: false } };
@@ -49,7 +49,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     sseDone(res);
   } catch (err) {
-    console.error("run-tool error:", err);
+    logOpenAIError("run-tool error", err);
     const aiErr = classifyOpenAIError(err);
     sseError(
       res,

@@ -15,8 +15,10 @@ import {
   Zap,
   CheckCheck,
   Layers,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAIAuthIncident } from "@/hooks/useAIAuthIncident";
 
 interface Notification {
   id: string;
@@ -168,7 +170,8 @@ function generateNotifications(userId: string | null): Notification[] {
 }
 
 export function NotificationCenter() {
-  const { userId } = useAuth();
+  const { userId, isAdmin } = useAuth();
+  const incident = useAIAuthIncident(userId, isAdmin);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
@@ -196,7 +199,7 @@ export function NotificationCenter() {
     loadNotifications();
   }, [loadNotifications]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read).length + (incident ? 1 : 0);
 
   const markAllRead = () => {
     const allIds = notifications.map((n) => n.id);
@@ -236,9 +239,16 @@ export function NotificationCenter() {
   };
 
   return (
+    <>
+      {incident && (
+        <Link href="/admin" role="alert" className="inline-flex items-center gap-1 rounded-md border border-red-400 bg-red-50 px-2 py-1 text-xs font-semibold text-red-800 dark:bg-red-950 dark:text-red-200">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>Gangguan AI</span>
+        </Link>
+      )}
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+        <button aria-label={`Notifikasi, ${unreadCount} belum dibaca`} className="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
           <Bell className="w-4.5 h-4.5 text-gray-500 dark:text-gray-400" />
           {unreadCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
@@ -270,6 +280,16 @@ export function NotificationCenter() {
         </div>
 
         <div className="max-h-[320px] overflow-y-auto">
+          {incident && (
+            <Link href="/admin" onClick={() => setOpen(false)} className="flex items-start gap-3 border-b border-red-200 bg-red-50 px-4 py-3 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">Koneksi AI gagal berulang kali</p>
+                <p className="mt-1 text-xs">{incident.failureCount} kegagalan autentikasi terdeteksi. Buka /admin untuk memeriksa konfigurasi AI.</p>
+                <p className="mt-1 text-xs">Peringatan hilang setelah pemeriksaan kesehatan berhasil.</p>
+              </div>
+            </Link>
+          )}
           {notifications.length === 0 ? (
             <div className="p-6 text-center text-sm text-gray-500">
               Belum ada notifikasi
@@ -335,5 +355,6 @@ export function NotificationCenter() {
         </div>
       </PopoverContent>
     </Popover>
+    </>
   );
 }

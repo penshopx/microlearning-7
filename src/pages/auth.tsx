@@ -6,18 +6,43 @@ import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { supabase } from "@/integrations/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { Mail, Lock, User, ArrowLeft, CheckCircle } from "lucide-react";
 import { ChaesaLogo } from "@/components/ChaesaLogo";
 import { authService } from "@/services/authService";
+
+function getAuthErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (message.includes("konfigurasi login belum tersedia")) {
+    return "Login belum siap karena konfigurasi Supabase belum tersedia. Hubungi administrator aplikasi.";
+  }
+  if (message.includes("invalid login credentials")) {
+    return "Email atau kata sandi salah. Periksa kembali lalu coba lagi.";
+  }
+  if (message.includes("email not confirmed")) {
+    return "Email Anda belum diverifikasi. Buka tautan verifikasi yang dikirim ke email Anda.";
+  }
+  if (message.includes("user already registered") || message.includes("already been registered")) {
+    return "Email ini sudah terdaftar. Silakan masuk atau gunakan fitur lupa kata sandi.";
+  }
+  if (message.includes("password should be at least") || message.includes("password must be at least")) {
+    return "Kata sandi terlalu pendek. Gunakan minimal 6 karakter.";
+  }
+  if (message.includes("email rate limit exceeded") || message.includes("rate limit")) {
+    return "Terlalu banyak percobaan. Tunggu sebentar sebelum mencoba kembali.";
+  }
+  if (message.includes("redirect") && message.includes("allow")) {
+    return "Alamat callback belum diizinkan di pengaturan autentikasi. Tambahkan URL /auth/callback ke daftar redirect Supabase.";
+  }
+  return "Autentikasi gagal. Periksa koneksi dan data akun Anda, lalu coba lagi.";
+}
 
 export default function AuthPage() {
   const router = useRouter();
   const { mode } = router.query; // 'login' or 'register'
   
   const [isLogin, setIsLogin] = useState(true);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   
@@ -57,9 +82,13 @@ export default function AuthPage() {
   useEffect(() => {
     // Check if already logged in
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        router.push("/");
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (!error && session) {
+          await router.replace("/");
+        }
+      } catch {
+        // Keep the form usable when session lookup is temporarily unavailable.
       }
     };
     checkAuth();
@@ -69,7 +98,8 @@ export default function AuthPage() {
     e.preventDefault();
     
     // Validate email format before submitting
-    if (!validateEmail(email)) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!validateEmail(normalizedEmail)) {
       toast({
         title: "Email Tidak Valid",
         description: "Mohon periksa kembali format email Anda. Contoh: nama@email.com",
@@ -81,55 +111,53 @@ export default function AuthPage() {
     setIsLoading(true);
     setError("");
     setSuccess("");
-    setLoading(true);
 
     try {
+      if (!isSupabaseConfigured) {
+        throw new Error("Konfigurasi login belum tersedia. Hubungi administrator aplikasi.");
+      }
+
       if (isLogin) {
-        // Login
         const { data, error } = await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
 
         if (error) throw error;
+        if (!data.session) throw new Error("Login tidak menghasilkan sesi.");
 
         setSuccess("Login berhasil! Mengalihkan...");
-        setTimeout(() => {
-          router.push("/");
-        }, 1000);
+        await router.replace("/");
       } else {
-        // Register
-        if (!fullName.trim()) {
-          throw new Error("Nama lengkap harus diisi");
+        const normalizedName = fullName.trim();
+        if (!normalizedName) {
+          throw new Error("Nama lengkap harus diisi.");
         }
 
         const { data, error } = await supabase.auth.signUp({
-          email,
+          email: normalizedEmail,
           password,
           options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
             data: {
-              full_name: fullName,
+              full_name: normalizedName,
             },
           },
         });
 
         if (error) throw error;
 
-        setSuccess("Pendaftaran berhasil! Silakan cek email untuk verifikasi.");
-        
-        // Auto login after register (if email confirmation not required)
         if (data.session) {
-          setTimeout(() => {
-            router.push("/");
-          }, 2000);
+          setSuccess("Pendaftaran berhasil! Mengalihkan...");
+          await router.replace("/");
+        } else {
+          setSuccess("Pendaftaran berhasil. Buka email Anda untuk memverifikasi akun sebelum masuk.");
         }
       }
-    } catch (err: any) {
-      console.error("Auth error:", err);
-      setError(err.message || "Terjadi kesalahan. Silakan coba lagi.");
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err));
     } finally {
       setIsLoading(false);
-      setLoading(false);
     }
   };
 
@@ -174,14 +202,15 @@ export default function AuthPage() {
             disabled={isLoading}
             onClick={async () => {
               try {
+                if (!isSupabaseConfigured) {
+                  throw new Error("Konfigurasi login belum tersedia. Hubungi administrator aplikasi.");
+                }
                 setIsLoading(true);
                 setError("");
                 const { error } = await authService.signInWithGoogle();
                 if (error) throw error;
-                setTimeout(() => setIsLoading(false), 5000);
-              } catch (err: any) {
-                console.error("Google auth error:", err);
-                setError(err.message || "Gagal login dengan Google. Silakan coba lagi.");
+              } catch (err: unknown) {
+                setError(getAuthErrorMessage(err));
                 setIsLoading(false);
               }
             }}
@@ -245,9 +274,13 @@ export default function AuthPage() {
                   <Input
                     id="fullName"
                     type="text"
+                    autoComplete="name"
                     placeholder="Masukkan nama lengkap Anda"
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      setError("");
+                    }}
                     className="pl-10 bg-white/10 border-white/20 text-white placeholder-gray-400 focus:border-purple-500"
                     required={!isLogin}
                   />
@@ -261,14 +294,20 @@ export default function AuthPage() {
               <Input
                 id="email"
                 type="email"
+                autoComplete="email"
                 placeholder="nama@email.com"
                 value={email}
-                onChange={handleEmailChange}
+                onChange={(e) => {
+                  handleEmailChange(e);
+                  setError("");
+                }}
+                aria-invalid={!!emailError}
+                aria-describedby={emailError ? "email-error" : undefined}
                 required
                 className={emailError ? "border-red-500 focus-visible:ring-red-500" : ""}
               />
               {emailError && (
-                <p className="text-sm text-red-500 mt-1">{emailError}</p>
+                <p id="email-error" className="text-sm text-red-500 mt-1">{emailError}</p>
               )}
             </div>
 
@@ -282,9 +321,13 @@ export default function AuthPage() {
                 <Input
                   id="password"
                   type="password"
+                  autoComplete={isLogin ? "current-password" : "new-password"}
                   placeholder="Minimal 6 karakter"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError("");
+                  }}
                   className="pl-10 bg-white/10 border-white/20 text-white placeholder-gray-400 focus:border-purple-500"
                   required
                   minLength={6}
@@ -297,6 +340,7 @@ export default function AuthPage() {
               <div className="flex justify-end">
                 <button
                   type="button"
+                  disabled={isLoading}
                   onClick={async () => {
                     if (!email) {
                       toast({
@@ -315,8 +359,11 @@ export default function AuthPage() {
                       return;
                     }
                     try {
+                      if (!isSupabaseConfigured) {
+                        throw new Error("Konfigurasi login belum tersedia. Hubungi administrator aplikasi.");
+                      }
                       setIsLoading(true);
-                      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
                         redirectTo: `${window.location.origin}/auth`,
                       });
                       if (error) throw error;
@@ -324,10 +371,10 @@ export default function AuthPage() {
                         title: "Email Terkirim",
                         description: "Link reset password telah dikirim ke email Anda. Periksa inbox Anda.",
                       });
-                    } catch (err: any) {
+                    } catch (err: unknown) {
                       toast({
                         title: "Gagal",
-                        description: err?.message || "Gagal mengirim email reset password",
+                        description: getAuthErrorMessage(err),
                         variant: "destructive"
                       });
                     } finally {
@@ -357,11 +404,14 @@ export default function AuthPage() {
               {isLogin ? "Belum punya akun?" : "Sudah punya akun?"}{" "}
               <button
                 onClick={() => {
+                  if (isLoading) return;
                   setIsLogin(!isLogin);
                   setError("");
                   setSuccess("");
+                  setEmailError("");
                   router.push(`/auth?mode=${isLogin ? "register" : "login"}`, undefined, { shallow: true });
                 }}
+                disabled={isLoading}
                 className="text-purple-400 hover:text-purple-300 font-semibold"
               >
                 {isLogin ? "Daftar di sini" : "Masuk di sini"}

@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
 import { AGENTS } from "@/lib/agents-data";
 import type { AgentId } from "@/lib/agents-data";
-import { classifyOpenAIError } from "@/lib/openai-error";
+import { classifyOpenAIError, logOpenAIError } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -134,7 +134,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     sseDone(res);
 
   } catch (err) {
-    console.error("Multi-agent error:", err);
+    logOpenAIError("Multi-agent error", err);
     const aiErr = classifyOpenAIError(err);
     sseError(
       res,

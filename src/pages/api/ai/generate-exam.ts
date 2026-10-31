@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import OpenAI from "openai";
-import { classifyOpenAIError, getOpenAIErrorResponse } from "@/lib/openai-error";
+import { classifyOpenAIError, getOpenAIErrorResponse, logOpenAIError } from "@/lib/openai-error";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -69,7 +69,7 @@ export default async function handler(
     } catch (error) {
       const aiErr = classifyOpenAIError(error);
       if (aiErr.isAIUnavailable) throw error; // propagate quota/rate-limit to outer catch
-      console.error("OpenAI API error, falling back to template:", error);
+      logOpenAIError("OpenAI API error, falling back to template", error);
       result = generateFallback(topic, difficulty as Difficulty, count, types);
     }
 
@@ -82,7 +82,7 @@ export default async function handler(
       ...result,
     });
   } catch (error) {
-    console.error("Generate Exam Error:", error);
+    logOpenAIError("Generate Exam Error", error);
     const aiErrorResponse = getOpenAIErrorResponse(error);
     if (aiErrorResponse) {
       return res.status(aiErrorResponse.status).json(aiErrorResponse.body);
