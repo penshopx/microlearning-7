@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 import React from "react";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getCourse: vi.fn(), getProgress: vi.fn(), save: vi.fn(),
   reconcile: vi.fn(), upload: vi.fn(), signedUrl: vi.fn(),
-  getReview: vi.fn(), rpc: vi.fn(),
+  getReview: vi.fn(), rpc: vi.fn(), getUser: vi.fn(),
 }));
 vi.mock("next/router", () => ({ useRouter: () => ({ query: { id: "course" } }) }));
 vi.mock("next/head", () => ({ default: () => null }));
@@ -32,7 +32,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     rpc: mocks.rpc,
     auth: {
-      getUser: async () => ({ data: { user: { id: "participant" } } }),
+      getUser: mocks.getUser,
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     },
     storage: { from: () => ({ upload: mocks.upload, createSignedUrl: mocks.signedUrl }) },
@@ -60,13 +60,20 @@ const course = {
     } }],
   }],
 };
-async function reflectionEditor() {
-  // Wait for the authenticated viewer's reload, not the first anonymous render.
+async function waitForAuthenticatedCourse() {
+  // Auth triggers a second load that unmounts the first form and invalidates
+  // in-flight saves. Wait for that load to start AND its form to be committed.
   await waitFor(() => expect(mocks.getCourse).toHaveBeenCalledTimes(2));
   return screen.findByRole("textbox", { name: "Catatan refleksi" });
 }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.getUser.mockResolvedValue({ data: { user: { id: "participant" } } });
   mocks.getCourse.mockResolvedValue({ data: course });
   mocks.getProgress.mockResolvedValue({ data: [progress(4, [])], error: null });
   mocks.reconcile.mockResolvedValue(true);
@@ -80,9 +87,47 @@ afterEach(() => {
 });
 
 describe("participant evidence conflicts", () => {
+  it("waits for authentication and the committed reload before interacting with evidence", async () => {
+    const auth = deferred<{ data: { user: { id: string } } }>();
+    const reload = deferred<{ data: ReturnType<typeof progress>[]; error: null }>();
+    mocks.getUser.mockReturnValueOnce(auth.promise);
+    mocks.getProgress
+      .mockResolvedValueOnce({ data: [progress(4, [])], error: null })
+      .mockReturnValueOnce(reload.promise);
+    mocks.save.mockImplementation(async (_course, _module, change) => ({
+      data: { ...progress(8, []), mission_progress: change.missionProgress }, error: null,
+    }));
+    const { container } = render(<CoursePage />);
+    await screen.findByText("Foto hasil");
+    const anonymousInput = container.querySelector('input[type="file"]')!;
+    expect(anonymousInput).toBeInTheDocument();
+
+    let ready = false;
+    const initialized = waitForAuthenticatedCourse().then(() => { ready = true; });
+    await act(async () => {});
+    expect(ready).toBe(false);
+
+    await act(async () => { auth.resolve({ data: { user: { id: "participant" } } }); });
+    expect(mocks.getCourse).toHaveBeenCalledTimes(2);
+    expect(anonymousInput).not.toBeInTheDocument();
+    expect(ready).toBe(false);
+
+    await act(async () => { reload.resolve({ data: [progress(7, [])], error: null }); });
+    await initialized;
+    const input = container.querySelector('input[type="file"]')!;
+    expect(input).not.toBe(anonymousInput);
+    fireEvent.change(input, {
+      target: { files: [new File(["proof"], "authenticated.png", { type: "image/png" })] },
+    });
+    await screen.findByText("Bukti praktik berhasil disimpan.");
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    expect(mocks.save.mock.calls[0][2].expectedMissionRevision).toBe(7);
+    await waitFor(() => expect(container.querySelector('input[type="file"]')).toBeEnabled());
+  });
+
   it("compares, copies, edits and deliberately resaves only reflection with the newest evidence and revision", async () => {
     render(<CoursePage />);
-    const editor = await reflectionEditor();
+    const editor = await waitForAuthenticatedCourse();
     const server = progress(5, [proof("newest.png")], "Refleksi dari perangkat lain");
     server.mission_progress.checkedPracticeIds = ["server-check"];
     server.mission_progress.selectedDecision = "Keputusan server";
@@ -123,7 +168,7 @@ describe("participant evidence conflicts", () => {
     let resolveSave!: (value: unknown) => void;
     mocks.save.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
     render(<CoursePage />);
-    const editor = await reflectionEditor();
+    const editor = await waitForAuthenticatedCourse();
     fireEvent.change(editor, { target: { value: "Draf pertama" } });
     fireEvent.blur(editor);
     await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
@@ -140,7 +185,7 @@ describe("participant evidence conflicts", () => {
 
   it("preserves the edited recovery draft if another device changes progress again", async () => {
     render(<CoursePage />);
-    const editor = await reflectionEditor();
+    const editor = await waitForAuthenticatedCourse();
     mocks.getProgress.mockResolvedValue({ data: [progress(5, [], "Server pertama")], error: null });
     mocks.save.mockResolvedValue({ data: null, error: { code: "40001" } });
     fireEvent.change(editor, { target: { value: "Draf lokal pertama" } });
@@ -158,7 +203,7 @@ describe("participant evidence conflicts", () => {
 
   it("blocks competing edits while an explicit reflection recovery save is in flight", async () => {
     render(<CoursePage />);
-    const editor = await reflectionEditor();
+    const editor = await waitForAuthenticatedCourse();
     const server = progress(5, [proof("remote.png")], "Refleksi server");
     mocks.getProgress.mockResolvedValue({ data: [server], error: null });
     mocks.save.mockResolvedValueOnce({ data: null, error: { code: "40001" } });
@@ -183,7 +228,7 @@ describe("participant evidence conflicts", () => {
 
   it("retains a copyable draft when saving and the refresh both lose connection", async () => {
     render(<CoursePage />);
-    const editor = await reflectionEditor();
+    const editor = await waitForAuthenticatedCourse();
     mocks.save.mockResolvedValueOnce({ data: null, error: { code: "40001" } });
     mocks.getProgress.mockRejectedValueOnce(new Error("connection lost"));
     fireEvent.change(editor, { target: { value: "Draf sebelum koneksi terputus" } });
@@ -196,7 +241,7 @@ describe("participant evidence conflicts", () => {
 
   it("allows copying but blocks restoration when refresh fails", async () => {
     render(<CoursePage />);
-    const editor = await reflectionEditor();
+    const editor = await waitForAuthenticatedCourse();
     mocks.save.mockResolvedValue({ data: null, error: { code: "40001" } });
     mocks.getProgress.mockResolvedValue({ data: null, error: new Error("offline") });
     fireEvent.change(editor, { target: { value: "Draf aman saat offline" } });
@@ -213,7 +258,7 @@ describe("participant evidence conflicts", () => {
 
   it("keeps completed server progress locked while still offering a copy of the local draft", async () => {
     render(<CoursePage />);
-    const editor = await reflectionEditor();
+    const editor = await waitForAuthenticatedCourse();
     mocks.getProgress.mockResolvedValue({
       data: [{ ...progress(5, [proof("completed.png")], "Refleksi selesai"), status: "completed" }], error: null,
     });
@@ -228,7 +273,7 @@ describe("participant evidence conflicts", () => {
 
   it("reloads another device's evidence instead of rolling back to the stale local snapshot", async () => {
     const { container } = render(<CoursePage />);
-    await screen.findByText("Foto hasil");
+    await waitForAuthenticatedCourse();
     mocks.getProgress.mockResolvedValue({ data: [progress(5, [proof("other-device.png")])], error: null });
     mocks.save.mockResolvedValue({ data: null, error: { code: "40001" } });
     const input = await waitFor(() => {
@@ -246,6 +291,7 @@ describe("participant evidence conflicts", () => {
   it("keeps refreshed replacement evidence after a stale delete conflicts", async () => {
     mocks.getProgress.mockResolvedValue({ data: [progress(4, [proof("original.png")])], error: null });
     render(<CoursePage />);
+    await waitForAuthenticatedCourse();
     await screen.findByText("original.png");
     mocks.getProgress.mockResolvedValue({ data: [progress(5, [proof("replacement.png")])], error: null });
     mocks.save.mockResolvedValue({ data: null, error: { code: "40001" } });
@@ -256,7 +302,7 @@ describe("participant evidence conflicts", () => {
   });
   it("advances the expected revision after successful saves in the same tab", async () => {
     const { container } = render(<CoursePage />);
-    await screen.findByText("Foto hasil");
+    await waitForAuthenticatedCourse();
     mocks.save.mockImplementation(async (_course, _module, change) => ({
       data: { ...progress(5, []), mission_progress: change.missionProgress }, error: null,
     }));
@@ -269,9 +315,11 @@ describe("participant evidence conflicts", () => {
       target: { files: [new File(["proof"], "saved.png", { type: "image/png" })] },
     });
     await screen.findByText("Bukti praktik berhasil disimpan.");
+    await waitFor(() => expect(screen.getByRole("button", { name: /Hapus/ })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: /Hapus/ }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
     expect(mocks.save.mock.calls[1][2].expectedMissionRevision).toBe(5);
+    await screen.findByText("Bukti praktik dihapus.");
   });
   it("replaces and resubmits requested evidence without reopening completion or awarding it again", async () => {
     const completed = { ...progress(9, [proof("original.png")]), status: "completed" };
@@ -285,6 +333,7 @@ describe("participant evidence conflicts", () => {
       data: { ...completed, mission_revision: 10, mission_progress: change.missionProgress }, error: null,
     }));
     const { container } = render(<CoursePage />);
+    await waitForAuthenticatedCourse();
     await screen.findByText("original.png");
     const input = await waitFor(() => {
       const element = container.querySelector('input[type="file"]') as HTMLInputElement;
