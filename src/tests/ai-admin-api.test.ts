@@ -163,11 +163,41 @@ describe("health-driven recovery", () => {
     vi.mocked(fetch).mockResolvedValue(new Response("private provider body", { status }));
     const res = response();
     await health(request(), res);
-    expect(getAIAuthIncident()).not.toBeNull();
+    expect(await getAIAuthIncident()).not.toBeNull();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       status: status === 401 ? "invalid" : "unreachable",
     }));
     expect(JSON.stringify(res.json.mock.calls)).not.toContain("private");
+  });
+
+  it("waits for a rejected key to be recorded without forwarding provider bodies or headers", async () => {
+    let finishStore!: () => void;
+    const pendingStore = new Promise<void>(resolve => { finishStore = resolve; });
+    const originalRpc = incidentStore.rpc;
+    const rpc = vi.spyOn(incidentStore, "rpc").mockImplementation(async (name, args) => {
+      if (name === "record_ai_auth_failure") await pendingStore;
+      return originalRpc(name, args);
+    });
+    vi.mocked(fetch).mockResolvedValue(new Response("private provider body test-key", {
+      status: 401,
+      headers: { "x-private-provider": "private provider header" },
+    }));
+    const res = response();
+    const running = health(request(), res);
+    try {
+      await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith("record_ai_auth_failure", {
+        p_occurred_at: null,
+      }));
+      expect(res.status).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    } finally {
+      finishStore();
+      await running;
+      rpc.mockRestore();
+    }
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: "invalid" }));
+    expect(JSON.stringify([res.json.mock.calls, res.setHeader.mock.calls]))
+      .not.toMatch(/private provider|test-key/);
   });
 
   it("keeps incidents when credentials are missing or the provider cannot be reached", async () => {
