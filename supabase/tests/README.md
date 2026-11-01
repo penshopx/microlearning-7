@@ -26,7 +26,12 @@ The same runner also applies the current supervisor review migration and runs
 `mission_review_rls.sql` as a learner and two distinct course owners. This
 checks course-scoped reads from `learner_progress`, `mission_reviews`, and
 `mission_review_comments`, plus Storage object SELECT authorization for signed
-URL creation. The disposable cluster does not run Supabase's HTTP Storage
+URL creation. It also attempts cross-course review INSERT/UPDATE and comment
+INSERT/DELETE, including spoofed reviewer IDs, and verifies persisted state is
+unchanged. Positive controls prove the legitimate course owner can create and
+update a pending review and add/delete valid video comments. Rejected inserts
+must raise the exact authorization/visibility error; invisible UPDATE/DELETE
+targets must affect zero rows. The disposable cluster does not run Supabase's HTTP Storage
 service, so it verifies the database authorization required before URL signing
 rather than generating an HTTP signed URL.
 
