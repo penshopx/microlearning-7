@@ -439,6 +439,30 @@ async function main() {
     );
     console.log("PASS: Owner uploaded and downloaded the physical evidence file");
 
+    const forbiddenDelete = await other.storage.from(bucket).remove([storagePath]);
+    // DELETE RLS filters out inaccessible objects: Storage returns an empty
+    // deletion list, not an HTTP error. Auth/network/server errors must fail.
+    const deletedObjects = requireNoError(
+      forbiddenDelete,
+      "Attempt evidence deletion as the second test account",
+    );
+    assert(
+      Array.isArray(deletedObjects) && deletedObjects.length === 0,
+      "Storage allowed another user to delete the participant's evidence",
+    );
+    const survivingFile = requireNoError(
+      await participant.storage.from(bucket).download(storagePath),
+      "Owner downloads evidence after another user's deletion attempt",
+    );
+    assert(
+      Buffer.compare(
+        Buffer.from(await survivingFile.arrayBuffer()),
+        Buffer.from(fileBytes),
+      ) === 0,
+      "Evidence bytes changed after another user's deletion attempt",
+    );
+    console.log("PASS: Storage API denies cross-user deletion and owner can still download identical evidence");
+
     const missionProgress = {
       evidenceConfirmed: true,
       evidenceUploads: [{
