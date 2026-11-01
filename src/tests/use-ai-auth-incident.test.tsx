@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAIAuthIncident } from "@/hooks/useAIAuthIncident";
+import { useAIAuthIncident, useAIAuthStatus } from "@/hooks/useAIAuthIncident";
 import { AI_AUTH_INCIDENT_UPDATED_EVENT } from "@/lib/ai-auth-incident";
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -20,6 +20,16 @@ afterEach(() => {
 });
 
 describe("admin incident refresh", () => {
+  it("keeps the last known incident but explicitly marks failed reads as unavailable", async () => {
+    const { result } = renderHook(() => useAIAuthStatus("admin", true));
+    await waitFor(() => expect(result.current?.status).toBe("available"));
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response);
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(result.current).toMatchObject({ status: "unavailable", incident });
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(result.current).toMatchObject({ status: "available", incident });
+  });
+
   it("never polls for non-admins and clears state when the account changes", async () => {
     const { result, rerender } = renderHook(
       ({ userId, isAdmin }) => useAIAuthIncident(userId, isAdmin),

@@ -5,11 +5,17 @@ import {
   type AIAuthIncident,
 } from "@/lib/ai-auth-incident";
 
+interface AIAuthStatus {
+  incident: AIAuthIncident | null;
+  status: "available" | "unavailable";
+  hasKey?: boolean;
+}
+
 /** Poll shared admin-only incident metadata, never the provider health probe. */
-export function useAIAuthIncident(userId: string | null, isAdmin: boolean) {
+export function useAIAuthStatus(userId: string | null, isAdmin: boolean): AIAuthStatus | null {
   const [snapshot, setSnapshot] = useState<{
     userId: string;
-    incident: AIAuthIncident | null;
+    value: AIAuthStatus;
   } | null>(null);
 
   useEffect(() => {
@@ -18,6 +24,16 @@ export function useAIAuthIncident(userId: string | null, isAdmin: boolean) {
     let cancelled = false;
     let pending = false;
     const controller = new AbortController();
+    const unavailable = () => {
+      if (cancelled) return;
+      setSnapshot(previous => ({
+        userId,
+        value: {
+          incident: previous?.userId === userId ? previous.value.incident : null,
+          status: "unavailable",
+        },
+      }));
+    };
     const refresh = async () => {
       if (pending || cancelled) return;
       pending = true;
@@ -25,7 +41,7 @@ export function useAIAuthIncident(userId: string | null, isAdmin: boolean) {
         const { data: { session } } = await supabase.auth.getSession();
         if (cancelled) return;
         if (!session?.access_token) {
-          setSnapshot(null);
+          if (!cancelled) setSnapshot(null);
           return;
         }
         const response = await fetch("/api/admin/ai-status", {
@@ -37,11 +53,25 @@ export function useAIAuthIncident(userId: string | null, isAdmin: boolean) {
           if (!cancelled) setSnapshot(null);
           return;
         }
-        if (!response.ok) return;
+        if (!response.ok) {
+          unavailable();
+          return;
+        }
         const data = await response.json();
-        if (!cancelled) setSnapshot({ userId, incident: data.authFailureIncident ?? null });
+        if (!data || !Object.hasOwn(data, "authFailureIncident")) {
+          unavailable();
+          return;
+        }
+        if (!cancelled) setSnapshot({
+          userId,
+          value: {
+            incident: data.authFailureIncident,
+            status: "available",
+            hasKey: typeof data.hasKey === "boolean" ? data.hasKey : undefined,
+          },
+        });
       } catch {
-        // Keep a known incident visible during a temporary polling failure.
+        unavailable();
       } finally {
         pending = false;
       }
@@ -59,5 +89,9 @@ export function useAIAuthIncident(userId: string | null, isAdmin: boolean) {
     };
   }, [userId, isAdmin]);
 
-  return isAdmin && snapshot?.userId === userId ? snapshot.incident : null;
+  return isAdmin && snapshot?.userId === userId ? snapshot.value : null;
+}
+
+export function useAIAuthIncident(userId: string | null, isAdmin: boolean) {
+  return useAIAuthStatus(userId, isAdmin)?.incident ?? null;
 }

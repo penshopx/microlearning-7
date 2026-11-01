@@ -10,7 +10,7 @@ import {
 } from "@/lib/server/ai-auth-failures";
 
 const auth = vi.hoisted(() => ({
-  role: "admin", valid: true,
+  role: "admin", valid: true, storageUnavailable: false,
 }));
 const incidentStore = vi.hoisted(() => {
   let sequence = 0;
@@ -31,7 +31,10 @@ const incidentStore = vi.hoisted(() => {
         }
         return { data: incident, error: null };
       }
-      if (name === "get_ai_auth_incident") return { data: incident, error: null };
+      if (name === "get_ai_auth_incident") return {
+        data: incident,
+        error: auth.storageUnavailable ? { message: "private database details test-key" } : null,
+      };
       if (name === "get_ai_auth_failure_sequence") return { data: sequence, error: null };
       if (name === "clear_ai_auth_failures") {
         const matches = sequence === args?.p_checked_sequence;
@@ -75,6 +78,7 @@ beforeEach(() => {
   incidentStore.reset();
   auth.role = "admin";
   auth.valid = true;
+  auth.storageUnavailable = false;
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://supabase.test");
   vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-service-role");
   vi.stubEnv("AI_INTEGRATIONS_OPENAI_API_KEY", "test-key");
@@ -108,6 +112,29 @@ describe.each([["health", health], ["status", aiStatus]] as const)("%s admin gat
 });
 
 describe("admin incident status", () => {
+  it("reports storage failure safely and recovers on the next request", async () => {
+    auth.storageUnavailable = true;
+    const res = response();
+    await aiStatus(request(), res);
+    expect(res.status).toHaveBeenLastCalledWith(503);
+    expect(res.json).toHaveBeenLastCalledWith({ error: "INCIDENT_STORAGE_UNAVAILABLE" });
+    expect(JSON.stringify(res.json.mock.calls)).not.toMatch(/private|test-key/);
+    auth.storageUnavailable = false;
+    await aiStatus(request(), res);
+    expect(res.status).toHaveBeenLastCalledWith(200);
+    expect(res.json).toHaveBeenLastCalledWith(expect.objectContaining({ authFailureIncident: null }));
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not reveal storage unavailability to non-admins", async () => {
+    auth.storageUnavailable = true;
+    auth.role = "user";
+    const res = response();
+    await aiStatus(request(), res);
+    expect(res.status).toHaveBeenLastCalledWith(403);
+    expect(res.json).toHaveBeenLastCalledWith({ error: "Forbidden" });
+  });
+
   it("returns safe incident metadata without probing the provider", async () => {
     await triggerIncident();
     const res = response();

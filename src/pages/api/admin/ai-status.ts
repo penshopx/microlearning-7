@@ -45,10 +45,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
     const hasBaseUrl = !!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
 
+    let authFailureIncident;
+    try {
+      authFailureIncident = await getAIAuthIncident();
+    } catch {
+      // Do not expose database errors or provider details.
+      return res.status(503).json({ error: "INCIDENT_STORAGE_UNAVAILABLE" });
+    }
+
     return res.status(200).json({
       hasKey,
       hasBaseUrl,
-      authFailureIncident: await getAIAuthIncident(),
+      authFailureIncident,
     });
   } catch (err) {
     console.error("ai-status check failed");
