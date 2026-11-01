@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { authService } from "@/services/authService";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
 import { 
   Video, Users, Lock, Share2, Award, MessageSquare, 
@@ -22,8 +24,8 @@ import { ChaesaLogo } from "@/components/ChaesaLogo";
 export default function Home() {
   const router = useRouter();
   const [meetingCode, setMeetingCode] = useState("");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
+  const { isLoggedIn, user } = useAuth();
+  const userEmail = user?.email || "";
   const [showDebug, setShowDebug] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeUseCaseFilter, setActiveUseCaseFilter] = useState("Semua");
@@ -43,31 +45,6 @@ export default function Home() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // Check if user is logged in
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        console.log("Auth check:", { session: !!session, error });
-        
-        if (session && !error) {
-          setIsLoggedIn(true);
-          setUserEmail(session.user.email || "");
-          console.log("User logged in:", session.user.email);
-        } else {
-          setIsLoggedIn(false);
-          setUserEmail("");
-          console.log("User not logged in");
-        }
-      } catch (error) {
-        console.error("Auth check error:", error);
-        setIsLoggedIn(false);
-        setUserEmail("");
-      }
-    };
-    checkAuth();
   }, []);
 
   // Simulate real-time stats counter
@@ -369,9 +346,8 @@ export default function Home() {
                           onClick={async () => {
                             setMobileMenuOpen(false);
                             try {
-                              await supabase.auth.signOut();
-                              setIsLoggedIn(false);
-                              setUserEmail("");
+                              const { error } = await authService.signOut();
+                              if (error) throw error;
                               toast({
                                 title: "Logout Berhasil",
                                 description: "Anda telah keluar dari akun",
@@ -419,10 +395,8 @@ export default function Home() {
                       className="text-gray-700 hover:bg-gray-200 dark:text-white dark:hover:bg-white/10"
                       onClick={async () => {
                         try {
-                          console.log("Logging out...");
-                          await supabase.auth.signOut();
-                          setIsLoggedIn(false);
-                          setUserEmail("");
+                          const { error } = await authService.signOut();
+                          if (error) throw error;
                           toast({
                             title: "Logout Berhasil",
                             description: "Anda telah keluar dari akun",

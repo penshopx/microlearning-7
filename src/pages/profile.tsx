@@ -82,7 +82,8 @@ export default function ProfilePage() {
 
   async function handleLogout() {
     try {
-      await supabase.auth.signOut();
+      const { error } = await authService.signOut();
+      if (error) throw error;
       toast({
         title: "Logout Berhasil",
         description: "Anda telah keluar dari akun",
@@ -101,7 +102,7 @@ export default function ProfilePage() {
     if (!user?.email) return;
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-        redirectTo: `${window.location.origin}/auth`,
+        redirectTo: `${window.location.origin}/auth/callback?next=recovery`,
       });
       if (error) throw error;
       toast({

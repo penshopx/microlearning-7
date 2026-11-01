@@ -6,10 +6,31 @@ const SUPABASE_PUBLISHABLE_KEY =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   '';
-export const isSupabaseConfigured = !!(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
+export const isSupabaseConfigured = (() => {
+  try {
+    const url = new URL(SUPABASE_URL);
+    return ["https:", "http:"].includes(url.protocol) && !!SUPABASE_PUBLISHABLE_KEY;
+  } catch {
+    return false;
+  }
+})();
 
 function createNoopProxy(): SupabaseClient<Database> {
-  const noopResult = { data: null, error: null, count: null, status: 200, statusText: 'OK' };
+  const error = new Error("Konfigurasi login belum tersedia. Hubungi administrator aplikasi.");
+  const noopResult = { data: null, error, count: null, status: 503, statusText: 'Unavailable' };
+  const auth = {
+    getSession: async () => ({ data: { session: null }, error }),
+    getUser: async () => ({ data: { user: null }, error }),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+    signOut: async () => ({ error }),
+    signUp: async () => ({ data: { user: null, session: null }, error }),
+    signInWithPassword: async () => ({ data: { user: null, session: null }, error }),
+    signInWithOAuth: async () => ({ data: { url: null }, error }),
+    resetPasswordForEmail: async () => ({ data: null, error }),
+    updateUser: async () => ({ data: { user: null }, error }),
+    exchangeCodeForSession: async () => ({ data: { session: null }, error }),
+    setSession: async () => ({ data: { session: null }, error }),
+  };
 
   function createChainableProxy(): any {
     const proxy: any = new Proxy(() => {}, {
@@ -29,6 +50,7 @@ function createNoopProxy(): SupabaseClient<Database> {
 
   return new Proxy({} as SupabaseClient<Database>, {
     get(_target, prop) {
+      if (prop === 'auth') return auth;
       if (prop === 'then') return undefined;
       if (prop === 'toJSON') return () => ({});
       return (..._args: any[]) => createChainableProxy();

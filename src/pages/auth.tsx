@@ -13,7 +13,8 @@ import { ChaesaLogo } from "@/components/ChaesaLogo";
 import { authService } from "@/services/authService";
 
 function getAuthErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  const message = typeof error === "object" && error !== null && "message" in error
+    ? String(error.message).toLowerCase() : "";
   if (message.includes("konfigurasi login belum tersedia")) {
     return "Login belum siap karena konfigurasi Supabase belum tersedia. Hubungi administrator aplikasi.";
   }
@@ -34,6 +35,10 @@ function getAuthErrorMessage(error: unknown): string {
   }
   if (message.includes("redirect") && message.includes("allow")) {
     return "Alamat callback belum diizinkan di pengaturan autentikasi. Tambahkan URL /auth/callback ke daftar redirect Supabase.";
+  }
+  if (message.includes("nama lengkap")) return "Nama lengkap harus diisi.";
+  if (message.includes("failed to fetch") || message.includes("network")) {
+    return "Tidak dapat terhubung ke layanan login. Periksa koneksi atau hubungi administrator.";
   }
   return "Autentikasi gagal. Periksa koneksi dan data akun Anda, lalu coba lagi.";
 }
@@ -147,6 +152,7 @@ export default function AuthPage() {
 
         if (error) throw error;
 
+        if (!data.user) throw new Error("Pendaftaran tidak menghasilkan akun.");
         if (data.session) {
           setSuccess("Pendaftaran berhasil! Mengalihkan...");
           await router.replace("/");
@@ -248,14 +254,14 @@ export default function AuthPage() {
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 text-sm">
+            <div role="alert" className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 text-sm">
               {error}
             </div>
           )}
 
           {/* Success Message */}
           {success && (
-            <div className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-green-300 text-sm flex items-center gap-2">
+            <div role="status" className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-green-300 text-sm flex items-center gap-2">
               <CheckCircle className="w-5 h-5" />
               {success}
             </div>
@@ -322,7 +328,7 @@ export default function AuthPage() {
                   id="password"
                   type="password"
                   autoComplete={isLogin ? "current-password" : "new-password"}
-                  placeholder="Minimal 6 karakter"
+                placeholder={isLogin ? "Kata sandi Anda" : "Minimal 6 karakter"}
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
@@ -330,7 +336,7 @@ export default function AuthPage() {
                   }}
                   className="pl-10 bg-white/10 border-white/20 text-white placeholder-gray-400 focus:border-purple-500"
                   required
-                  minLength={6}
+                  minLength={isLogin ? undefined : 6}
                 />
               </div>
             </div>
@@ -364,7 +370,7 @@ export default function AuthPage() {
                       }
                       setIsLoading(true);
                       const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-                        redirectTo: `${window.location.origin}/auth`,
+                        redirectTo: `${window.location.origin}/auth/callback?next=recovery`,
                       });
                       if (error) throw error;
                       toast({

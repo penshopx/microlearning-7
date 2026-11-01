@@ -18,23 +18,18 @@ export const authService = {
   // Sign up with email and password
   async signUp(email: string, password: string, fullName?: string) {
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: email.trim().toLowerCase(),
       password,
       options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
         data: {
           full_name: fullName || ""
         }
       }
     });
 
-    if (data.user && !error) {
-      await supabase.from("profiles").upsert({
-        id: data.user.id,
-        email: data.user.email,
-        full_name: fullName || "",
-        avatar_url: null
-      });
-    }
+    // profiles is created by the auth.users database trigger. A signup awaiting
+    // confirmation has no session and cannot safely write a profile from here.
 
     return { data, error };
   },
@@ -42,7 +37,7 @@ export const authService = {
   // Sign in with email and password
   async signIn(email: string, password: string) {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: email.trim().toLowerCase(),
       password
     });
     return { data, error };
@@ -50,7 +45,10 @@ export const authService = {
 
   // Sign out
   async signOut() {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (!error && typeof window !== "undefined") {
+      localStorage.removeItem("chaesa_guest_user");
+    }
     return { error };
   },
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "@/integrations/supabase/client";
 import Link from "next/link";
@@ -9,11 +9,21 @@ export default function AuthCallback() {
   const router = useRouter();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [message, setMessage] = useState("Memproses autentikasi...");
+  const started = useRef(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     const handleCallback = async () => {
       try {
         const url = new URL(window.location.href);
+        const hashParams = new URLSearchParams(url.hash.substring(1));
+        if (url.searchParams.has("error") || hashParams.has("error")) {
+          throw new Error("Invalid authentication link");
+        }
+        const recovery = url.searchParams.get("next") === "recovery" ||
+          hashParams.get("type") === "recovery";
+        const destination = recovery ? "/auth/reset-password" : "/";
         const code = url.searchParams.get("code");
         let callbackSession = null;
         if (code) {
@@ -24,7 +34,7 @@ export default function AuthCallback() {
           callbackSession = data.session;
           if (!callbackSession) {
             const { data: exchanged, error: exchangeError } =
-              await supabase.auth.exchangeCodeForSession(url.toString());
+              await supabase.auth.exchangeCodeForSession(code);
             if (exchangeError) throw exchangeError;
             callbackSession = exchanged.session;
           }
@@ -40,27 +50,23 @@ export default function AuthCallback() {
         if (session) {
           setStatus("success");
           setMessage("Login berhasil! Mengalihkan...");
-          setTimeout(() => {
-            router.replace("/");
-          }, 1500);
+          await router.replace(destination);
         } else {
-          const hashParams = new URLSearchParams(url.hash.substring(1));
           const accessToken = hashParams.get("access_token");
           const refreshToken = hashParams.get("refresh_token");
 
           if (accessToken && refreshToken) {
-            const { error: setError } = await supabase.auth.setSession({
+            const { data, error: setError } = await supabase.auth.setSession({
               access_token: accessToken,
               refresh_token: refreshToken,
             });
 
             if (setError) throw setError;
+            if (!data.session) throw new Error("Sesi tidak ditemukan");
 
             setStatus("success");
             setMessage("Login berhasil! Mengalihkan...");
-            setTimeout(() => {
-              router.replace("/");
-            }, 1500);
+            await router.replace(destination);
           } else {
             throw new Error("Sesi tidak ditemukan");
           }

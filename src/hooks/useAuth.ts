@@ -22,36 +22,50 @@ export function useAuth(): AuthState {
 
   useEffect(() => {
     let mounted = true;
+    let revision = 0;
+    let profileTimer: ReturnType<typeof setTimeout> | undefined;
 
-    async function fetchProfile(userId: string) {
+    async function fetchProfile(userId: string, expectedRevision: number) {
       try {
         const { data } = await supabase
           .from("profiles")
           .select("role")
           .eq("id", userId)
           .single();
-        if (mounted) setIsAdmin(data?.role === "admin");
+        if (mounted && revision === expectedRevision) setIsAdmin(data?.role === "admin");
       } catch {
-        if (mounted) setIsAdmin(false);
+        if (mounted && revision === expectedRevision) setIsAdmin(false);
       }
     }
 
+    function applyUser(nextUser: User | null) {
+      const expectedRevision = ++revision;
+      clearTimeout(profileTimer);
+      setUser(nextUser);
+      setIsAdmin(false);
+      setIsGuest(false);
+      setUserName(nextUser
+        ? nextUser.user_metadata?.full_name || nextUser.email?.split("@")[0] || "User"
+        : "");
+      if (nextUser) {
+        // Supabase auth callbacks run under its auth lock. Query after returning
+        // from the callback, and ignore responses from a previous account.
+        profileTimer = setTimeout(() => void fetchProfile(nextUser.id, expectedRevision), 0);
+      }
+      setIsLoading(false);
+    }
+
     async function loadUser() {
+      const initialRevision = revision;
       try {
         const { data: { session } } = await supabase.auth.getSession();
 
-        if (!mounted) return;
+        if (!mounted || revision !== initialRevision) return;
 
         if (session?.user) {
-          setUser(session.user);
-          const name =
-            session.user.user_metadata?.full_name ||
-            session.user.email?.split("@")[0] ||
-            "User";
-          setUserName(name);
-          setIsGuest(false);
-          fetchProfile(session.user.id);
+          applyUser(session.user);
         } else {
+          applyUser(null);
           const guestData = typeof window !== "undefined"
             ? localStorage.getItem("chaesa_guest_user")
             : null;
@@ -67,38 +81,23 @@ export function useAuth(): AuthState {
           setIsAdmin(false);
         }
       } catch (err) {
-        console.error("Auth check error:", err);
+        if (mounted && revision === initialRevision) applyUser(null);
       } finally {
         if (mounted) setIsLoading(false);
       }
     }
 
-    loadUser();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         if (!mounted) return;
-        if (session?.user) {
-          setUser(session.user);
-          const name =
-            session.user.user_metadata?.full_name ||
-            session.user.email?.split("@")[0] ||
-            "User";
-          setUserName(name);
-          setIsGuest(false);
-          fetchProfile(session.user.id);
-        } else {
-          setUser(null);
-          setUserName("");
-          setIsGuest(false);
-          setIsAdmin(false);
-        }
-        setIsLoading(false);
+        applyUser(session?.user ?? null);
       }
     );
+    void loadUser();
 
     return () => {
       mounted = false;
+      clearTimeout(profileTimer);
       subscription.unsubscribe();
     };
   }, []);

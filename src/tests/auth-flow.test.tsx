@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AuthPage from "@/pages/auth";
 import AuthCallback from "@/pages/auth/callback";
+import ResetPasswordPage from "@/pages/auth/reset-password";
 
 const authState = vi.hoisted(() => ({
   query: {} as Record<string, string>,
@@ -17,6 +18,9 @@ const authState = vi.hoisted(() => ({
   setSession: vi.fn(),
   signInWithOAuth: vi.fn(),
   resetPasswordForEmail: vi.fn(),
+  getUser: vi.fn(),
+  updateUser: vi.fn(),
+  signOut: vi.fn(),
   isConfigured: true,
 }));
 
@@ -41,12 +45,14 @@ vi.mock("@/integrations/supabase/client", () => ({
       exchangeCodeForSession: authState.exchangeCodeForSession,
       setSession: authState.setSession,
       resetPasswordForEmail: authState.resetPasswordForEmail,
+      getUser: authState.getUser,
+      updateUser: authState.updateUser,
     },
   },
   get isSupabaseConfigured() { return authState.isConfigured; },
 }));
 vi.mock("@/services/authService", () => ({
-  authService: { signInWithGoogle: authState.signInWithOAuth },
+  authService: { signInWithGoogle: authState.signInWithOAuth, signOut: authState.signOut },
 }));
 vi.mock("@/components/SEO", () => ({ SEO: () => null }));
 vi.mock("@/components/ChaesaLogo", () => ({ ChaesaLogo: () => <span>logo</span> }));
@@ -75,6 +81,9 @@ beforeEach(() => {
   authState.signInWithOAuth.mockReset().mockResolvedValue({ error: null });
   authState.resetPasswordForEmail.mockReset().mockResolvedValue({ error: null });
   authState.isConfigured = true;
+  authState.getUser.mockReset().mockResolvedValue({ data: { user: { id: "member" } }, error: null });
+  authState.updateUser.mockReset().mockResolvedValue({ data: {}, error: null });
+  authState.signOut.mockReset().mockResolvedValue({ error: null });
 });
 afterEach(() => cleanup());
 
@@ -148,7 +157,7 @@ describe("email confirmation callback", () => {
     window.history.replaceState({}, "", "/auth/callback?code=verification-code");
     render(<AuthCallback />);
     await waitFor(() => expect(authState.exchangeCodeForSession).toHaveBeenCalledWith(
-      expect.stringContaining("code=verification-code"),
+      "verification-code",
     ));
     expect(await screen.findByText("Login berhasil! Mengalihkan...")).toBeVisible();
     await waitFor(
@@ -163,5 +172,57 @@ describe("email confirmation callback", () => {
     render(<AuthCallback />);
     expect(await screen.findByText(/Tautan verifikasi tidak valid atau sudah kedaluwarsa/)).toBeVisible();
     expect(screen.getByRole("link", { name: "Kembali ke login" })).toHaveAttribute("href", "/auth");
+  });
+});
+
+describe("password recovery", () => {
+  it("sends recovery links to the callback with an explicit recovery destination", async () => {
+    render(<AuthPage />);
+    completeEmailForm("", "member@example.com", "");
+    fireEvent.click(screen.getByRole("button", { name: "Lupa Password?" }));
+    await waitFor(() => expect(authState.resetPasswordForEmail).toHaveBeenCalledWith(
+      "member@example.com",
+      { redirectTo: `${window.location.origin}/auth/callback?next=recovery` },
+    ));
+  });
+
+  it("routes a recovered session to the password form, not the home page", async () => {
+    window.history.replaceState({}, "", "/auth/callback?code=recovery-code&next=recovery");
+    render(<AuthCallback />);
+    await waitFor(() => expect(authState.replace).toHaveBeenCalledWith("/auth/reset-password"));
+  });
+
+  it("rejects provider callback errors even when another session exists", async () => {
+    window.history.replaceState({}, "", "/auth/callback?error=access_denied");
+    authState.getSession.mockResolvedValue({ data: { session: { user: { id: "existing" } } }, error: null });
+    render(<AuthCallback />);
+    expect(await screen.findByText(/Tautan verifikasi tidak valid/)).toBeVisible();
+    expect(authState.replace).not.toHaveBeenCalled();
+  });
+
+  it("requires a verified session before showing the reset form", async () => {
+    authState.getUser.mockResolvedValue({ data: { user: null }, error: new Error("expired") });
+    render(<ResetPasswordPage />);
+    expect(await screen.findByText(/Tautan pemulihan tidak valid/)).toBeVisible();
+    expect(screen.queryByLabelText("Kata sandi baru")).not.toBeInTheDocument();
+  });
+
+  it("rejects mismatched passwords without changing the account", async () => {
+    render(<ResetPasswordPage />);
+    fireEvent.change(await screen.findByLabelText("Kata sandi baru"), { target: { value: "new-password" } });
+    fireEvent.change(screen.getByLabelText("Konfirmasi kata sandi"), { target: { value: "different-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Simpan kata sandi" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("tidak cocok");
+    expect(authState.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("updates the password and closes the current session", async () => {
+    render(<ResetPasswordPage />);
+    fireEvent.change(await screen.findByLabelText("Kata sandi baru"), { target: { value: "new-password" } });
+    fireEvent.change(screen.getByLabelText("Konfirmasi kata sandi"), { target: { value: "new-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Simpan kata sandi" }));
+    expect(await screen.findByText("Kata sandi berhasil diperbarui.")).toBeVisible();
+    expect(authState.updateUser).toHaveBeenCalledWith({ password: "new-password" });
+    expect(authState.signOut).toHaveBeenCalledOnce();
   });
 });
