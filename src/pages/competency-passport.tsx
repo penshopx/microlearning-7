@@ -23,7 +23,7 @@ const LEVEL_CONFIG: Record<string, { label: string; color: string; bg: string; b
   L4: { label: "L4 - Strategic", color: "text-orange-700 dark:text-orange-300", bg: "bg-orange-100 dark:bg-orange-900/30", border: "border-orange-300 dark:border-orange-700", ring: "ring-orange-400", value: 100 },
 };
 
-const SAMPLE_COMPETENCIES = [
+const SAMPLE_COMPETENCIES: Competency[] = [
   { id: "s1", unit: "M.702090.001.01", title: "Pemasaran Digital Berbasis Data", sector: "Pemasaran & Penjualan", level: "L2", verifiedAt: "2025-11-15", method: "Observasi + Tes Tertulis", score: 82, status: "verified" },
   { id: "s2", unit: "J.620100.001.02", title: "Pengembangan Aplikasi Web", sector: "Teknologi Informasi & Komunikasi", level: "L3", verifiedAt: "2025-12-20", method: "Portfolio + Simulasi", score: 90, status: "verified" },
   { id: "s3", unit: "M.701001.036.01", title: "Manajemen Tim Lintas Fungsi", sector: "Sumber Daya Manusia", level: "L2", verifiedAt: "2026-01-08", method: "Wawancara + Observasi", score: 76, status: "verified" },
@@ -148,7 +148,7 @@ export default function CompetencyPassport() {
   const [filterSector, setFilterSector] = useState("Semua");
   const [filterLevel, setFilterLevel] = useState("Semua");
 
-  const storageKey = getUserStorageKey(user, "competency_passport");
+  const storageKey = getUserStorageKey(user?.id ?? null, "competency_passport");
 
   useEffect(() => {
     try {

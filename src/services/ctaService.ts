@@ -51,10 +51,7 @@ export const ctaService = {
   async activateCTA(ctaId: string): Promise<{ success: boolean; error?: any }> {
     const { error } = await supabase
       .from("meeting_ctas")
-      .update({ 
-        is_active: true,
-        activated_at: new Date().toISOString()
-      })
+      .update({ is_active: true })
       .eq("id", ctaId);
 
     return { success: !error, error };

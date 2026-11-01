@@ -117,7 +117,7 @@ export default function CompetencyBuilder() {
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const [aiError, setAiError] = useState<string | null>(null);
 
-  const storageKey = getUserStorageKey(user, "competency_courses");
+  const storageKey = getUserStorageKey(user?.id ?? null, "competency_courses");
 
   useEffect(() => {
     try {

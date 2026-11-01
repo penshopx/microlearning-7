@@ -33,7 +33,6 @@ export const meetingIntegrationService = {
           meeting_id: meeting.id,
           user_id: userId,
           display_name: "Host",
-          is_host: true,
         });
 
       if (joinError) throw joinError;

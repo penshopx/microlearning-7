@@ -77,14 +77,14 @@ export default async function handler(
       .insert({
         user_id: user.id,
         meeting_id: meetingId,
-        job_id: job.id,
+        processing_job_id: job.id,
         content_type: "presentation",
         title: options?.title || "Auto-Generated Presentation",
         description: "AI-generated presentation slides from your meeting",
         file_url: "https://example.com/presentations/demo.pptx", // In prod: actual Supabase Storage URL
         file_type: "pptx",
-        file_size: 2500000, // ~2.5MB
         metadata: {
+          file_size: 2500000, // ~2.5MB
           slides_count: 15,
           template: options?.template || "modern",
           has_speaker_notes: true,

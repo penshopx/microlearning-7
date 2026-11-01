@@ -147,7 +147,7 @@ const PKB_MONTHLY = [
 export default function BimtekIntegration() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const storageKey = getUserStorageKey(user, "bimtek_pkb");
+  const storageKey = getUserStorageKey(user?.id ?? null, "bimtek_pkb");
 
   const [activeTab, setActiveTab] = useState<"modules" | "skk" | "experts" | "certify" | "quiz" | "planner">("modules");
   const [categoryFilter, setCategoryFilter] = useState("Semua");

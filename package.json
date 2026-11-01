@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 5000 -H 0.0.0.0",
     "build": "next build",
-    "prebuild": "npm run audit",
+    "prebuild": "npm run audit && npm run typecheck",
+    "typecheck": "tsc --noEmit",
     "start": "next start -p 5000 -H 0.0.0.0",
     "lint": "next lint",
     "test": "vitest run",

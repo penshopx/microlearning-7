@@ -93,14 +93,14 @@ export default async function handler(
       .insert({
         user_id: user.id,
         meeting_id: meetingId,
-        job_id: job.id,
+        processing_job_id: job.id,
         content_type: "podcast",
         title: options?.title || "AI Podcast - Meeting Summary",
         description: "NotebookLM-style conversational podcast generated from your meeting",
         file_url: "https://example.com/podcasts/demo.mp3", // In prod: actual Supabase Storage URL
         file_type: "mp3",
-        file_size: 8500000, // ~8.5MB (10 minutes @ 128kbps)
         metadata: {
+          file_size: 8500000, // ~8.5MB (10 minutes @ 128kbps)
           duration_seconds: 600, // 10 minutes
           hosts: ["Alex (AI)", "Jordan (AI)"],
           format: "conversational",
