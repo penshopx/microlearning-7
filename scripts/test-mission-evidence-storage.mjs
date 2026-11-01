@@ -13,6 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const supabaseCli = path.join(root, "node_modules", ".bin", "supabase");
 const migrationDir = path.join(root, "supabase", "migrations");
 const bucket = "mission-evidence";
+const bucketSizeLimit = 50 * 1024 * 1024;
 const excludedServices =
   "studio,mailpit,realtime,imgproxy,postgres-meta,edge-runtime,logflare,vector,supavisor";
 
@@ -130,6 +131,9 @@ async function prepareIsolatedProject(tempRoot) {
   config = replaceSectionValue(config, "studio", "port", basePort + 3);
   config = replaceSectionValue(config, "local_smtp", "enabled", "false");
   config = replaceSectionValue(config, "local_smtp", "port", basePort + 4);
+  // Keep the server-wide limit above the bucket's 50 MiB limit so the
+  // oversized-upload check proves bucket enforcement, not the global cap.
+  config = replaceSectionValue(config, "storage", "file_size_limit", '"64MiB"');
   config = replaceSectionValue(config, "storage.s3_protocol", "enabled", "false");
   config = replaceSectionValue(config, "storage.vector", "enabled", "false");
   config = replaceSectionValue(config, "edge_runtime", "enabled", "false");
@@ -152,7 +156,8 @@ async function main() {
   });
 
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "mission-evidence-storage-"));
-  const { workdir, projectId } = await prepareIsolatedProject(tempRoot);
+  let workdir;
+  let projectId;
   let startAttempted = false;
   let admin;
   let service;
@@ -173,6 +178,7 @@ async function main() {
   let testError;
 
   try {
+    ({ workdir, projectId } = await prepareIsolatedProject(tempRoot));
     startAttempted = true;
     console.log("Starting isolated Supabase Auth, database, and Storage services...");
     await runCli(["start", "--ignore-health-check", "--exclude", excludedServices], workdir);
@@ -335,6 +341,81 @@ async function main() {
     });
     requireNoError(upload, "Upload evidence through the Storage HTTP API");
     assert(upload.data.path === storagePath, "Storage returned a different object path");
+
+    const bucketConfig = requireNoError(
+      await service.storage.getBucket(bucket),
+      "Read the migrated evidence bucket configuration",
+    );
+    assert(
+      Number(bucketConfig.file_size_limit) === bucketSizeLimit,
+      "Evidence bucket no longer has the expected 50 MiB size limit",
+    );
+    assert(
+      bucketConfig.allowed_mime_types?.includes("image/png") &&
+        !bucketConfig.allowed_mime_types.includes("application/x-msdownload"),
+      "Evidence bucket MIME allowlist does not match the rejection test controls",
+    );
+
+    async function expectUploadRejected({ suffix, contentType, bytes, status, code, message }) {
+      const rejectedPath =
+        `${participantId}/${courseId}/${moduleId}/photo/${runId}-${suffix}`;
+      // Register before the request: if a broken bucket accepts the upload,
+      // the failing assertion must not leave that unexpected object behind.
+      uploadPaths.push(rejectedPath);
+      const response = await fetch(`${apiUrl}/storage/v1/object/${bucket}/${rejectedPath}`, {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${participantSession.data.session.access_token}`,
+          "Content-Type": contentType,
+          "x-upsert": "false",
+        },
+        body: bytes,
+      });
+      const body = await response.json();
+      assert(
+        status.includes(response.status) &&
+          status.includes(Number(body.statusCode)) &&
+          (body.error === code || body.code === code || message.test(body.message || "")),
+        `Expected ${code} for ${suffix}, got HTTP ${response.status}: ${JSON.stringify(body)}`,
+      );
+
+      // Inspect with the service role so participant RLS cannot hide an
+      // accidentally-created object and make the absence assertion pass.
+      const folder = path.posix.dirname(rejectedPath);
+      const fileName = path.posix.basename(rejectedPath);
+      const objects = requireNoError(
+        await service.storage.from(bucket).list(folder, { search: fileName }),
+        `Check that rejected ${suffix} left no Storage object`,
+      );
+      assert(
+        !objects.some((object) => object.name === fileName),
+        `Rejected upload ${suffix} left a Storage object behind`,
+      );
+      console.log(`PASS: Storage API rejects ${suffix} and leaves no object`);
+    }
+
+    await expectUploadRejected({
+      suffix: "unsupported-mime.exe",
+      contentType: "application/x-msdownload",
+      bytes: new Uint8Array([77, 90, 0, 0]),
+      status: [400, 415],
+      code: "InvalidMimeType",
+      message: /mime\s*type.*not supported/i,
+    });
+    await expectUploadRejected({
+      suffix: "oversized.png",
+      contentType: "image/png",
+      // One byte beyond the actual migrated bucket limit, with an allowed
+      // MIME and the same authorized folder as the successful upload above.
+      bytes: new Uint8Array(bucketSizeLimit + 1),
+      // Some Storage versions wrap their 413 error in an HTTP 400 response.
+      // The semantic error check still rules out auth/RLS/network failures.
+      status: [400, 413],
+      code: "EntityTooLarge",
+      message: /(?:object|file).*exceed.*(?:maximum|allowed).*size/i,
+    });
 
     // This file exists in the same folder as the submission, but no progress
     // references it. A nonexistent path would not prove the linkage policy.
@@ -505,6 +586,9 @@ async function main() {
         cleanupErrors.push(`Find temporary Auth users: ${error.message}`);
         return null;
       });
+      if (users?.error) {
+        cleanupErrors.push(`Find temporary Auth users: ${users.error.message}`);
+      }
       const emails = new Set([participantEmail, otherEmail, ownerEmail]);
       const userIds = new Set([participantId, otherId, ownerId].filter(Boolean));
       for (const user of users?.data?.users || []) {
