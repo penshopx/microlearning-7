@@ -172,6 +172,36 @@ SELECT public.test_assert((public.upsert_learner_progress_atomic(
 )).status = 'completed', 'valid owner-scoped evidence completes via RPC');
 SELECT public.test_assert((SELECT completed_at IS NOT NULL AND progress_percentage = 100
   FROM public.learner_progress WHERE module_id = :'module'), 'completion persisted');
+
+-- An omitted metadata argument must remain distinguishable from an explicit
+-- empty object before ON CONFLICT runs the evidence trigger.
+SELECT public.test_assert((public.upsert_learner_progress_atomic(
+  :'course',:'module','completed',NULL,12,NULL,NULL,NULL
+)).time_spent_seconds = 12, 'partial completed update accepts omitted mission metadata');
+SELECT public.test_assert((SELECT status = 'completed'
+  AND jsonb_array_length(mission_progress->'evidenceUploads') = 1
+  AND mission_progress->'evidenceUploads'->0->>'storagePath' = :'prefix'||'/photo/proof.png'
+  FROM public.learner_progress WHERE module_id = :'module'),
+  'partial completed update preserves valid stored evidence');
+SELECT pg_temp.expect_evidence_rejection(format(
+  'SELECT public.upsert_learner_progress_atomic(%L,%L,%L,NULL,NULL,NULL,NULL,%L::jsonb)',
+  :'course', :'module', 'completed', '{}'), 'explicit empty mission metadata on completed progress');
+SELECT pg_temp.expect_evidence_rejection(format(
+  'SELECT public.upsert_learner_progress_atomic(%L,%L,%L,NULL,NULL,NULL,NULL,%L::jsonb)',
+  :'course', :'module', 'completed',
+  jsonb_build_object('evidenceUploads',jsonb_build_array(jsonb_build_object(
+    'evidenceId','photo','storagePath',:'prefix'||'/photo/missing.png')))),
+  'forged evidence on completed progress');
+SELECT public.test_assert((public.upsert_learner_progress_atomic(
+  :'course',:'module','completed',NULL,NULL,NULL,NULL,
+  jsonb_build_object('evidenceUploads',jsonb_build_array(jsonb_build_object(
+    'evidenceId','photo','storagePath',:'prefix'||'/photo/proof.png')))
+)).status = 'completed', 'complete valid mission metadata remains accepted');
+SELECT public.test_assert((SELECT time_spent_seconds = 12 AND status = 'completed'
+  AND jsonb_array_length(mission_progress->'evidenceUploads') = 1
+  FROM public.learner_progress WHERE module_id = :'module'),
+  'explicit valid metadata does not reset unrelated progress');
+
 SELECT pg_temp.expect_evidence_rejection(format(
   'UPDATE public.learner_progress SET mission_progress=%L::jsonb WHERE module_id=%L',
   '{}', :'module'), 'removing evidence from an already completed row');

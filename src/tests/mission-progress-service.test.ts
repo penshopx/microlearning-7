@@ -49,6 +49,22 @@ describe("versioned mission progress", () => {
     expect(mocks.rpc.mock.calls[0][0]).toBe("upsert_learner_progress_atomic");
     expect(mocks.rpc.mock.calls[0][1].p_mission_progress).toBeNull();
   });
+  it("sends omitted mission metadata as null for completed time-only updates", async () => {
+    mocks.rpc.mockResolvedValue({ data: {}, error: null });
+    await microLearningService.updateProgress("course", "module", {
+      status: "completed", timeSpentSeconds: 45, awardCompletion: false,
+    });
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("upsert_learner_progress_atomic", {
+      p_course_id: "course",
+      p_module_id: "module",
+      p_status: "completed",
+      p_progress_percentage: null,
+      p_time_spent_seconds: 45,
+      p_last_position_seconds: null,
+      p_quiz_score: null,
+      p_mission_progress: null,
+    });
+  });
   it("does not award completion again for a requested evidence resubmission", async () => {
     mocks.rpc.mockResolvedValue({ data: { mission_revision: 10 }, error: null });
     await microLearningService.updateProgress("course", "module", {

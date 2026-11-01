@@ -28,7 +28,8 @@ PSQL=(psql -X -v ON_ERROR_STOP=1 -h "$TEMP" -p 55439 -U "$(id -un)" -d postgres)
 for migration in \
   20260830000000_add_mission_progress.sql \
   20260830010000_add_mission_evidence_storage.sql \
-  20261031000000_add_supervisor_mission_reviews.sql; do
+  20261031000000_add_supervisor_mission_reviews.sql \
+  20261104000000_preserve_evidence_on_partial_progress.sql; do
   "${PSQL[@]}" -f "$ROOT/supabase/migrations/$migration" >/dev/null
 done
 "${PSQL[@]}" -f "$ROOT/supabase/tests/mission_evidence.sql"
