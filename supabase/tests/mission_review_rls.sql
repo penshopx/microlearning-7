@@ -1,6 +1,8 @@
 -- Run after the evidence and supervisor-review migrations in a disposable cluster.
 -- The signed-URL assertions exercise the storage.objects SELECT permission that
 -- Supabase Storage requires before it can mint a signed URL.
+-- Actual HTTP signing and signed-file downloads are covered separately by
+-- npm run test:integration:evidence:storage (isolated local Supabase + Docker).
 BEGIN;
 
 \set participant '00000000-0000-4000-8000-000000000002'

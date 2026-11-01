@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
-import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -98,8 +98,23 @@ function replaceSectionValue(config, section, key, value) {
 async function prepareIsolatedProject(tempRoot) {
   const workdir = path.join(tempRoot, "project");
   const supabaseDir = path.join(workdir, "supabase");
-  await mkdir(supabaseDir, { recursive: true });
-  await cp(migrationDir, path.join(supabaseDir, "migrations"), { recursive: true });
+  const testMigrations = path.join(supabaseDir, "migrations");
+  await mkdir(testMigrations, { recursive: true });
+  await copyFile(
+    path.join(root, "supabase", "tests", "mission_storage_fixture.sql"),
+    path.join(testMigrations, "20260829000000_http_test_fixture.sql"),
+  );
+  for (const migration of [
+    "20260830000000_add_mission_progress.sql",
+    "20260830010000_add_mission_evidence_storage.sql",
+    "20261031000000_add_supervisor_mission_reviews.sql",
+    "20261101000000_add_supervisor_mission_reviews.sql",
+    "20261102000000_mission_evidence_concurrency.sql",
+    "20261104000000_preserve_evidence_on_partial_progress.sql",
+    "20261105000000_evidence_cleanup_health.sql",
+  ]) {
+    await copyFile(path.join(migrationDir, migration), path.join(testMigrations, migration));
+  }
 
   const projectId = `mission-evidence-${randomBytes(5).toString("hex")}`;
   const basePort = await findPortBlock();
@@ -145,17 +160,21 @@ async function main() {
   let apiUrl;
   let participantId;
   let otherId;
+  let ownerId;
   let courseId;
+  let otherCourseId;
   let moduleId;
   const uploadPaths = [];
   const runId = randomUUID();
   const participantEmail = `mission-evidence-${runId}-participant@example.test`;
   const otherEmail = `mission-evidence-${runId}-other@example.test`;
+  const ownerEmail = `mission-evidence-${runId}-owner@example.test`;
   const cleanupErrors = [];
   let testError;
 
   try {
     startAttempted = true;
+    console.log("Starting isolated Supabase Auth, database, and Storage services...");
     await runCli(["start", "--ignore-health-check", "--exclude", excludedServices], workdir);
     await runCli(["db", "reset", "--local", "--no-seed"], workdir);
 
@@ -188,8 +207,16 @@ async function main() {
     });
     otherId = requireNoError(otherResult, "Create second test account").id;
 
+    const ownerResult = await admin.auth.admin.createUser({
+      email: ownerEmail,
+      password,
+      email_confirm: true,
+    });
+    ownerId = requireNoError(ownerResult, "Create course owner test account").id;
+
     const participant = client(apiUrl, anonKey);
     const other = client(apiUrl, anonKey);
+    const owner = client(apiUrl, anonKey);
     const participantSession = await participant.auth.signInWithPassword({
       email: participantEmail,
       password,
@@ -200,16 +227,27 @@ async function main() {
       password,
     });
     requireNoError(otherSession, "Sign in as the second test account");
+    const ownerSession = await owner.auth.signInWithPassword({
+      email: ownerEmail,
+      password,
+    });
+    requireNoError(ownerSession, "Sign in as the course owner");
 
     courseId = randomUUID();
+    otherCourseId = randomUUID();
     moduleId = randomUUID();
     await requireNoError(
-      await service.from("courses").insert({
+      await service.from("courses").insert([{
         id: courseId,
-        user_id: participantId,
+        user_id: ownerId,
         title: "Temporary mission evidence API test",
-        is_published: false,
-      }),
+        is_published: true,
+      }, {
+        id: otherCourseId,
+        user_id: otherId,
+        title: "Unrelated course owned by the denied reviewer",
+        is_published: true,
+      }]),
       "Create temporary course",
     );
     await requireNoError(
@@ -298,6 +336,19 @@ async function main() {
     requireNoError(upload, "Upload evidence through the Storage HTTP API");
     assert(upload.data.path === storagePath, "Storage returned a different object path");
 
+    // This file exists in the same folder as the submission, but no progress
+    // references it. A nonexistent path would not prove the linkage policy.
+    const unlinkedPath =
+      `${participantId}/${courseId}/${moduleId}/photo/${runId}-unlinked.png`;
+    uploadPaths.push(unlinkedPath);
+    requireNoError(
+      await participant.storage.from(bucket).upload(unlinkedPath, fileBytes, {
+        contentType: "image/png",
+        upsert: false,
+      }),
+      "Upload physical evidence that will remain unlinked",
+    );
+
     const downloaded = await participant.storage.from(bucket).download(storagePath);
     const downloadedFile = requireNoError(downloaded, "Download uploaded evidence through Storage");
     const downloadedBytes = new Uint8Array(await downloadedFile.arrayBuffer());
@@ -333,6 +384,63 @@ async function main() {
       "Application RPC did not persist the uploaded evidence path",
     );
     console.log("PASS: Application mission RPC accepts the uploaded evidence");
+
+    // Use real user sessions, never the service role, for signing requests.
+    const signed = requireNoError(
+      await owner.storage.from(bucket).createSignedUrl(storagePath, 60),
+      "Course owner requests a signed URL for linked participant evidence",
+    );
+    assert(signed.signedUrl, "Storage did not return a signed URL");
+    const signedUrl = new URL(signed.signedUrl);
+    assert(signedUrl.origin === parsedUrl.origin, "Signed URL escaped the isolated test server");
+    const signedDownload = await fetch(signedUrl, { redirect: "error" });
+    assert(signedDownload.ok, `Signed URL download failed with HTTP ${signedDownload.status}`);
+    assert(
+      Buffer.compare(Buffer.from(await signedDownload.arrayBuffer()), Buffer.from(fileBytes)) === 0,
+      "Signed URL did not return the participant's evidence bytes",
+    );
+    console.log("PASS: Matching course owner can sign and download linked participant evidence");
+
+    async function expectSigningDenied(storagePath, session, label) {
+      const response = await fetch(
+        `${apiUrl}/storage/v1/object/sign/${bucket}/${storagePath}`,
+        {
+          method: "POST",
+          redirect: "error",
+          headers: {
+            apikey: anonKey,
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ expiresIn: 60 }),
+        },
+      );
+      const body = await response.json();
+      // Storage deliberately hides objects excluded by SELECT RLS. Checking
+      // the precise error prevents network/auth/5xx failures from passing.
+      assert(
+        [400, 404].includes(response.status) &&
+          String(body.statusCode) === "404" &&
+          body.message === "Object not found" &&
+          !body.signedURL && !body.signedUrl,
+        `${label}: expected Storage's object-not-found denial, got HTTP ${response.status}`,
+      );
+      console.log(`PASS: ${label}`);
+    }
+
+    await expectSigningDenied(
+      storagePath, otherSession.data.session,
+      "Storage API denies another course owner a signed URL for linked evidence",
+    );
+    // Positive control for the negative case: this is not a missing file.
+    requireNoError(
+      await participant.storage.from(bucket).download(unlinkedPath),
+      "Confirm the unlinked object physically exists and remains readable by its uploader",
+    );
+    await expectSigningDenied(
+      unlinkedPath, ownerSession.data.session,
+      "Storage API denies the matching owner a signed URL for an unlinked existing object",
+    );
   } catch (error) {
     testError = error;
     if (String(error.message).includes("HealthCheckTimeoutError")) {
@@ -366,7 +474,7 @@ async function main() {
         });
       }
       if (participantId || otherId) {
-        const testUserIds = [participantId, otherId].filter(Boolean);
+        const testUserIds = [participantId, otherId, ownerId].filter(Boolean);
         await cleanup("Remove evidence lifecycle rows", () =>
           service.from("mission_evidence_objects").delete().in("user_id", testUserIds),
         );
@@ -385,9 +493,9 @@ async function main() {
           service.from("course_modules").delete().eq("id", moduleId),
         );
       }
-      if (courseId) {
+      if (courseId || otherCourseId) {
         await cleanup("Remove temporary course", () =>
-          service.from("courses").delete().eq("id", courseId),
+          service.from("courses").delete().in("id", [courseId, otherCourseId].filter(Boolean)),
         );
       }
     }
@@ -397,8 +505,8 @@ async function main() {
         cleanupErrors.push(`Find temporary Auth users: ${error.message}`);
         return null;
       });
-      const emails = new Set([participantEmail, otherEmail]);
-      const userIds = new Set([participantId, otherId].filter(Boolean));
+      const emails = new Set([participantEmail, otherEmail, ownerEmail]);
+      const userIds = new Set([participantId, otherId, ownerId].filter(Boolean));
       for (const user of users?.data?.users || []) {
         if (emails.has(user.email) || userIds.has(user.id)) userIds.add(user.id);
       }
