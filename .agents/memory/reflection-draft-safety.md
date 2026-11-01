@@ -8,3 +8,9 @@ Durable recovery is for reflection text only, scoped to the authenticated accoun
 **Why:** The requested recovery must prevent text loss without overwriting newer evidence or bypassing conflict detection. A missing save response is not proof the save failed, and older successful saves must not delete newer edits.
 
 **How to apply:** Recover text alongside freshly loaded server progress, save through the usual revision check, and clear drafts on confirmed matching saves or account changes. Browser storage is best-effort: report failures rather than promise refresh protection.
+
+Treat save queues and recovery locks as belonging to an account/course/module context, not to the mounted page.
+
+**Why:** Ignoring stale response data is insufficient: an unresolved old request can still block saves in the next context, and its eventual cleanup can release a newer request's lock.
+
+**How to apply:** Detach the old queue on context changes and scope asynchronous cleanup and copy feedback as well as response application. Prove the next context can save before resolving the old request.

@@ -274,11 +274,20 @@ export default function CoursePage() {
 
   useEffect(() => {
     saveContextRef.current++;
+    // A request from the previous context may never settle. It must neither
+    // block this context's queue nor release locks owned by its newer requests.
+    saveSequenceRef.current++;
+    saveQueueRef.current = Promise.resolve();
+    recoveryRequestRef.current = false;
+    recoveryConflictRef.current = false;
     saveBlockedRef.current = false;
+    setSaving(false);
+    setRefreshingProgress(false);
     setSyncRequired(false);
     setReflectionDraft(null);
     setRestoredReflection(null);
     setCopyMessage("");
+    setDraftStorageError("");
     setMissionProgress(normalizeMissionProgress(moduleProgress?.mission_progress));
     setLegacyAnswers({});
     setLegacySubmitted(false);
@@ -287,7 +296,7 @@ export default function CoursePage() {
     setFinalizing(false);
     finalizingRef.current = false;
     setEvidenceUrls({});
-  }, [currentModule?.id]);
+  }, [viewerId, courseId, currentModule?.id]);
 
   useEffect(() => {
     if (!loading && !progressLoaded) {
@@ -411,8 +420,10 @@ export default function CoursePage() {
         ? "Progres berubah di tab atau perangkat lain. Perubahan ini tidak disimpan, dan data terbaru belum berhasil dimuat. Coba muat data terbaru sebelum mengedit lagi. Draf refleksi dan bukti lokal tetap dipertahankan; bukti belum dipastikan tersimpan."
         : "Penyimpanan belum dapat dipastikan dan data terbaru belum berhasil dimuat. Coba muat data terbaru sebelum mengedit lagi. Draf refleksi dan bukti lokal tetap dipertahankan; bukti belum dipastikan tersimpan.");
     } finally {
-      recoveryRequestRef.current = false;
-      setRefreshingProgress(false);
+      if (context === saveContextRef.current) {
+        recoveryRequestRef.current = false;
+        setRefreshingProgress(false);
+      }
     }
   };
 
@@ -499,12 +510,15 @@ export default function CoursePage() {
   };
 
   const copyReflectionDraft = async () => {
+    const context = saveContextRef.current;
     if (reflectionDraft === null) return;
     try {
       await navigator.clipboard.writeText(reflectionDraft);
-      setCopyMessage("Draf refleksi disalin.");
+      if (context === saveContextRef.current) setCopyMessage("Draf refleksi disalin.");
     } catch {
-      setCopyMessage("Tidak dapat menyalin otomatis. Pilih teks draf lokal lalu salin secara manual.");
+      if (context === saveContextRef.current) {
+        setCopyMessage("Tidak dapat menyalin otomatis. Pilih teks draf lokal lalu salin secara manual.");
+      }
     }
   };
 
@@ -512,7 +526,8 @@ export default function CoursePage() {
     if (restoredReflection === null || missionLocked || saving || saveBlockedRef.current) return;
     // Restore text only. Never reapply the conflicted evidence/checklist snapshot.
     const next = { ...missionProgress, feedback: restoredReflection };
-    if (await persistMissionProgress(next)) {
+    const context = saveContextRef.current;
+    if (await persistMissionProgress(next) && context === saveContextRef.current) {
       setMissionProgress(next);
       setReflectionDraft(null);
       setRestoredReflection(null);
