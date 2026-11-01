@@ -166,7 +166,7 @@ END $$;
 
 -- Optional evidence is not required; a real object under the exact namespace is.
 SELECT public.test_assert((public.upsert_learner_progress_atomic(
-  :'course',:'module','completed',100,NULL,NULL,NULL,
+  :'course',:'module','completed',100,87,47,93,
   jsonb_build_object('evidenceUploads',jsonb_build_array(jsonb_build_object(
     'evidenceId','photo','storagePath',:'prefix'||'/photo/proof.png')))
 )).status = 'completed', 'valid owner-scoped evidence completes via RPC');
@@ -175,9 +175,50 @@ SELECT public.test_assert((SELECT completed_at IS NOT NULL AND progress_percenta
 
 -- An omitted metadata argument must remain distinguishable from an explicit
 -- empty object before ON CONFLICT runs the evidence trigger.
-SELECT public.test_assert((public.upsert_learner_progress_atomic(
-  :'course',:'module','completed',NULL,12,NULL,NULL,NULL
-)).time_spent_seconds = 12, 'partial completed update accepts omitted mission metadata');
+DO $$
+DECLARE
+  original public.learner_progress;
+  saved public.learner_progress;
+  c CONSTANT UUID := '10000000-0000-4000-8000-000000000001';
+  m CONSTANT UUID := '20000000-0000-4000-8000-000000000001';
+BEGIN
+  -- NOW() is constant within this transaction: use a historical timestamp so
+  -- accidentally replacing completed_at with NOW() cannot pass the regression.
+  UPDATE public.learner_progress
+  SET completed_at = '2025-01-02 03:04:05+00'::timestamptz
+  WHERE user_id = auth.uid() AND course_id = c AND module_id = m;
+  SELECT * INTO STRICT original FROM public.learner_progress
+  WHERE user_id = auth.uid() AND course_id = c AND module_id = m;
+  PERFORM public.test_assert(
+    original.status = 'completed' AND original.progress_percentage = 100
+    AND original.time_spent_seconds = 87 AND original.last_position_seconds = 47
+    AND original.quiz_score = 93
+    AND original.completed_at = '2025-01-02 03:04:05+00'::timestamptz,
+    'partial update starts with non-default completed progress');
+
+  -- Only learning time changes; all other optional RPC arguments are omitted.
+  saved := public.upsert_learner_progress_atomic(
+    p_course_id => c, p_module_id => m, p_status => 'completed',
+    p_time_spent_seconds => 12);
+  PERFORM public.test_assert(saved.time_spent_seconds = 12,
+    'partial completed update accepts omitted mission metadata');
+  PERFORM public.test_assert(saved.status IS NOT DISTINCT FROM original.status,
+    'partial completed update preserves status');
+  PERFORM public.test_assert(saved.progress_percentage IS NOT DISTINCT FROM original.progress_percentage,
+    'partial completed update preserves completion percentage');
+  PERFORM public.test_assert(saved.last_position_seconds IS NOT DISTINCT FROM original.last_position_seconds,
+    'partial completed update preserves last position');
+  PERFORM public.test_assert(saved.quiz_score IS NOT DISTINCT FROM original.quiz_score,
+    'partial completed update preserves quiz score');
+  PERFORM public.test_assert(saved.completed_at IS NOT DISTINCT FROM original.completed_at,
+    'partial completed update preserves original completion timestamp');
+  PERFORM public.test_assert(saved.mission_progress IS NOT DISTINCT FROM original.mission_progress,
+    'partial completed update preserves all mission metadata');
+  PERFORM public.test_assert((SELECT progress IS NOT DISTINCT FROM saved
+    FROM public.learner_progress AS progress
+    WHERE user_id = auth.uid() AND course_id = c AND module_id = m),
+    'partial completed update persists every returned field unchanged');
+END $$;
 SELECT public.test_assert((SELECT status = 'completed'
   AND jsonb_array_length(mission_progress->'evidenceUploads') = 1
   AND mission_progress->'evidenceUploads'->0->>'storagePath' = :'prefix'||'/photo/proof.png'
