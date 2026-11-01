@@ -37,6 +37,24 @@ MIME/size enforcement, signed URLs, or remote-schema drift. It is separate from
 `npm test` so unit tests remain usable without PostgreSQL.
 It is also registered as the `mission-evidence-integration` validation workflow.
 
+## Mission evidence Storage API
+
+Run `npm run test:integration:evidence:storage` with Docker available. The runner
+creates a temporary Supabase CLI project under the operating system's temp
+directory, copies in the repository migrations, and starts isolated local
+Postgres, Auth, PostgREST, and Storage services on available ports. It never
+reads the app's Supabase URL or credentials, links to a hosted project, or uses
+the configured database. It resets only its disposable database and stops the
+temporary project with its volumes removed, even after a failed assertion.
+
+The test creates two temporary Auth users, adds a private mission fixture,
+rejects a participant's upload into the other user's folder, verifies fabricated
+metadata cannot complete the practice, then uploads and downloads a small PNG
+through the actual HTTP Storage API and completes through the same
+`save_mission_progress` RPC used by `microLearningService.updateProgress`.
+Storage objects and bytes, fixture rows, and both test users are removed in a
+`finally` cleanup. This test runs separately from the SQL-only checks.
+
 ## Supervisor reviews
 
 Run `bash scripts/test-mission-reviews.sh` with PostgreSQL binaries on PATH.

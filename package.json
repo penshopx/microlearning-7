@@ -10,6 +10,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:integration:evidence": "bash scripts/test-mission-evidence.sh",
+    "test:integration:evidence:storage": "node scripts/test-mission-evidence-storage.mjs",
     "test:integration:ai-auth": "bash scripts/test-ai-auth-incidents.sh",
     "audit": "npm audit --audit-level=high",
     "postinstall": "npm run audit"
@@ -78,6 +79,7 @@
     "react-resizable-panels": "^2.1.7",
     "remark-gfm": "^4.0.1",
     "stripe": "^17.6.0",
+    "supabase": "^2.122.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
