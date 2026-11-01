@@ -22,6 +22,14 @@ checks afterward. An exit trap also stops and deletes the disposable cluster on
 success or failure. The bucket created by the migration exists only in that
 cluster. No shared remote data is modified.
 
+The same runner also applies the current supervisor review migration and runs
+`mission_review_rls.sql` as a learner and two distinct course owners. This
+checks course-scoped reads from `learner_progress`, `mission_reviews`, and
+`mission_review_comments`, plus Storage object SELECT authorization for signed
+URL creation. The disposable cluster does not run Supabase's HTTP Storage
+service, so it verifies the database authorization required before URL signing
+rather than generating an HTTP signed URL.
+
 This is database integration coverage: Storage objects are actual
 `storage.objects` rows subject to RLS, not mocked query results, but no physical
 files or HTTP Storage API are involved. It does not validate the Storage server,

@@ -35,6 +35,7 @@ done
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261101000000_add_supervisor_mission_reviews.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261102000000_mission_evidence_concurrency.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/tests/mission_evidence_concurrency.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/tests/mission_review_rls.sql"
 
 # Real overlapping transactions (not just two snapshots in one connection).
 for action in upload replace delete; do
