@@ -119,6 +119,9 @@ export default function CoursePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncRequired, setSyncRequired] = useState(false);
+  const [reflectionDraft, setReflectionDraft] = useState<string | null>(null);
+  const [restoredReflection, setRestoredReflection] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState("");
   const [finalizing, setFinalizing] = useState(false);
   const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
   const [removingEvidenceId, setRemovingEvidenceId] = useState<string | null>(null);
@@ -136,6 +139,8 @@ export default function CoursePage() {
   const saveContextRef = useRef(0);
   const saveBlockedRef = useRef(false);
   const activeModuleRef = useRef<string | undefined>(undefined);
+  const localReflectionRef = useRef("");
+  localReflectionRef.current = restoredReflection ?? missionProgress.feedback;
 
   useEffect(() => {
     let active = true;
@@ -149,6 +154,9 @@ export default function CoursePage() {
       revisionRef.current = {};
       saveContextRef.current++;
       setMissionProgress(emptyMissionProgress());
+      setReflectionDraft(null);
+      setRestoredReflection(null);
+      setCopyMessage("");
       setEvidenceUrls({});
     };
     void supabase.auth.getUser().then(({ data }) => {
@@ -210,7 +218,8 @@ export default function CoursePage() {
     return normalizeWorkplaceMission(missionContent?.content_data);
   }, [currentModule]);
   const isResubmissionRequested = missionReview?.review_status === "resubmission_requested";
-  const evidenceEditable = !syncRequired &&
+  const restoringReflection = restoredReflection !== null && saving;
+  const evidenceEditable = !syncRequired && !restoringReflection &&
     (moduleProgress?.status !== "completed" || isResubmissionRequested);
 
   useEffect(() => {
@@ -233,6 +242,9 @@ export default function CoursePage() {
     saveContextRef.current++;
     saveBlockedRef.current = false;
     setSyncRequired(false);
+    setReflectionDraft(null);
+    setRestoredReflection(null);
+    setCopyMessage("");
     setMissionProgress(normalizeMissionProgress(moduleProgress?.mission_progress));
     setLegacyAnswers({});
     setLegacySubmitted(false);
@@ -302,7 +314,7 @@ export default function CoursePage() {
   const requiredEvidenceItems = mission?.evidence.filter((item) => item.required) || [];
   const requiredEvidence = requiredEvidenceItems.length;
   const evidenceBusy = Boolean(uploadingEvidenceId || removingEvidenceId);
-  const missionLocked = moduleProgress?.status === "completed" || finalizing || evidenceBusy || syncRequired;
+  const missionLocked = moduleProgress?.status === "completed" || finalizing || evidenceBusy || syncRequired || restoringReflection;
   const practiceComplete = practiceChecks.length > 0 &&
     practiceChecks.every((item) => missionProgress.checkedPracticeIds.includes(item.id));
   const decisionComplete = scenarioOptions.length === 0 || Boolean(missionProgress.selectedDecision);
@@ -328,6 +340,7 @@ export default function CoursePage() {
     }
     const moduleId = currentModule.id;
     const context = saveContextRef.current;
+    let operationContext = context;
     const sequence = ++saveSequenceRef.current;
     setSaving(true);
     setErrorMessage("");
@@ -354,9 +367,15 @@ export default function CoursePage() {
       if (context !== saveContextRef.current) return false;
 
       if (result.error || !result.data) {
+        // Capture the latest editor value, not the older snapshot whose save
+        // failed: newer reflection edits may already be queued behind it.
+        setReflectionDraft(localReflectionRef.current);
+        setRestoredReflection(null);
+        setCopyMessage("");
         // Invalidate already queued stale snapshots as well. A lost response is
         // ambiguous, so reload rather than blindly retrying or deleting proof.
         const refreshContext = ++saveContextRef.current;
+        operationContext = refreshContext;
         saveBlockedRef.current = true;
         setSyncRequired(true);
         const latest = await microLearningService.getLearnerProgress(courseId);
@@ -384,6 +403,9 @@ export default function CoursePage() {
       setProgress((current) => mergeProgress(current, result.data));
       return true;
     }).catch(() => {
+      if (operationContext !== saveContextRef.current) return false;
+      setReflectionDraft(localReflectionRef.current);
+      setRestoredReflection(null);
       saveContextRef.current++;
       saveBlockedRef.current = true;
       setSyncRequired(true);
@@ -397,8 +419,30 @@ export default function CoursePage() {
     return operation;
   };
 
+  const copyReflectionDraft = async () => {
+    if (reflectionDraft === null) return;
+    try {
+      await navigator.clipboard.writeText(reflectionDraft);
+      setCopyMessage("Draf refleksi disalin.");
+    } catch {
+      setCopyMessage("Tidak dapat menyalin otomatis. Pilih teks draf lokal lalu salin secara manual.");
+    }
+  };
+
+  const saveRestoredReflection = async () => {
+    if (restoredReflection === null || missionLocked || saving || saveBlockedRef.current) return;
+    // Restore text only. Never reapply the conflicted evidence/checklist snapshot.
+    const next = { ...missionProgress, feedback: restoredReflection };
+    if (await persistMissionProgress(next)) {
+      setMissionProgress(next);
+      setReflectionDraft(null);
+      setRestoredReflection(null);
+      setCompletionMessage("Refleksi disimpan ulang. Bukti terbaru tetap dipertahankan.");
+    }
+  };
+
   const togglePracticeCheck = (checkId: string) => {
-    if (saveBlockedRef.current || evidenceOperationRef.current || finalizingRef.current || moduleProgress?.status === "completed") return;
+    if (saveBlockedRef.current || evidenceOperationRef.current || finalizingRef.current || restoringReflection || moduleProgress?.status === "completed") return;
     setMissionProgress((current) => {
       const checked = current.checkedPracticeIds.includes(checkId);
       const next = {
@@ -413,7 +457,7 @@ export default function CoursePage() {
   };
 
   const chooseDecision = (option: string) => {
-    if (saveBlockedRef.current || evidenceOperationRef.current || finalizingRef.current || moduleProgress?.status === "completed") return;
+    if (saveBlockedRef.current || evidenceOperationRef.current || finalizingRef.current || restoringReflection || moduleProgress?.status === "completed") return;
     setMissionProgress((current) => {
       const next = { ...current, selectedDecision: option };
       void persistMissionProgress(next);
@@ -435,7 +479,7 @@ export default function CoursePage() {
     if (!file || !currentModule || !mission) return;
     if (
       saveBlockedRef.current || evidenceOperationRef.current ||
-      finalizingRef.current ||
+      finalizingRef.current || restoringReflection ||
       (moduleProgress?.status === "completed" && !isResubmissionRequested)
     ) return;
 
@@ -555,7 +599,7 @@ export default function CoursePage() {
   const handleRemoveEvidence = async (evidenceId: string) => {
     if (
       saveBlockedRef.current || evidenceOperationRef.current ||
-      finalizingRef.current ||
+      finalizingRef.current || restoringReflection ||
       moduleProgress?.status === "completed"
     ) return;
     const upload = missionProgress.evidenceUploads.find((item) => item.evidenceId === evidenceId);
@@ -1067,16 +1111,59 @@ export default function CoursePage() {
                       {mission.feedback.questions.map((question) => <li key={question}>• {question}</li>)}
                     </ul>
                     <Textarea
-                      value={missionProgress.feedback}
-                      onChange={(event) => setMissionProgress({
-                        ...missionProgress,
-                        feedback: event.target.value,
-                      })}
-                      onBlur={() => void persistMissionProgress(missionProgress)}
-                      disabled={missionLocked}
+                      aria-label="Catatan refleksi"
+                      value={restoredReflection ?? missionProgress.feedback}
+                      onChange={(event) => {
+                        localReflectionRef.current = event.target.value;
+                        if (reflectionDraft !== null) {
+                          setRestoredReflection(event.target.value);
+                        } else {
+                          setMissionProgress({ ...missionProgress, feedback: event.target.value });
+                        }
+                      }}
+                      onBlur={() => {
+                        if (reflectionDraft === null) void persistMissionProgress(missionProgress);
+                      }}
+                      disabled={missionLocked || (restoredReflection !== null && saving)}
                       placeholder="Tulis refleksi singkat (minimal 10 karakter)..."
                       className="mt-4 min-h-28 border-white/15 bg-black/25 text-white placeholder:text-slate-500"
                     />
+                    {reflectionDraft !== null && (
+                      <section aria-label="Pemulihan refleksi" className="mt-4 space-y-3 rounded-xl border border-amber-300/30 bg-amber-950/30 p-4">
+                        <h4 className="font-semibold text-amber-100">Bandingkan refleksi sebelum menyimpan ulang</h4>
+                        <p className="text-sm text-slate-300">
+                          Draf lokal belum disimpan ulang. Pulihkan hanya teks refleksi; bukti dan progres terbaru tidak diganti.
+                          {syncRequired && " Versi server belum berhasil dimuat. Pemulihan dinonaktifkan sampai data terbaru tersedia."}
+                        </p>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="text-sm text-slate-200">
+                            Draf lokal
+                            <Textarea readOnly value={reflectionDraft} aria-label="Draf refleksi lokal" className="mt-1 bg-black/25 text-white" />
+                          </label>
+                          <label className="text-sm text-slate-200">
+                            Versi server{syncRequired ? " (belum tersedia)" : ""}
+                            <Textarea readOnly value={syncRequired ? "" : normalizeMissionProgress(moduleProgress?.mission_progress).feedback} aria-label="Refleksi versi server" className="mt-1 bg-black/25 text-white" />
+                          </label>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" variant="outline" onClick={() => void copyReflectionDraft()}>Salin draf lokal</Button>
+                          <Button type="button" variant="outline" disabled={missionLocked || saving} onClick={() => {
+                            setRestoredReflection(reflectionDraft);
+                            localReflectionRef.current = reflectionDraft;
+                          }}>Pulihkan draf ke editor</Button>
+                          {restoredReflection !== null && (
+                            <Button type="button" disabled={missionLocked || saving} onClick={() => void saveRestoredReflection()}>Simpan ulang refleksi</Button>
+                          )}
+                          <Button type="button" variant="outline" disabled={saving || syncRequired} onClick={() => {
+                            setReflectionDraft(null);
+                            setRestoredReflection(null);
+                            setCopyMessage("");
+                          }}>Gunakan versi server</Button>
+                        </div>
+                        {restoredReflection !== null && <p className="text-sm text-amber-100">Draf dipulihkan ke editor. Edit bila perlu, lalu tekan Simpan ulang refleksi.</p>}
+                        {copyMessage && <p role="status" className="text-sm text-amber-100">{copyMessage}</p>}
+                      </section>
+                    )}
                     <div className="mt-4 flex gap-3 rounded-xl border border-blue-400/20 bg-blue-400/10 p-4">
                       <CalendarClock className="w-5 h-5 text-blue-300 shrink-0" />
                       <div>
@@ -1088,7 +1175,7 @@ export default function CoursePage() {
                     <Button
                       type="button"
                       onClick={completeMission}
-                      disabled={!canCompleteMission || saving || missionLocked}
+                      disabled={!canCompleteMission || saving || missionLocked || restoredReflection !== null}
                       className="mt-5 w-full bg-blue-500 hover:bg-blue-400 text-white font-semibold"
                     >
                       <CheckCircle2 className="w-4 h-4 mr-2" />

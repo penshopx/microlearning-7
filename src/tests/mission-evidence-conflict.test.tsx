@@ -46,9 +46,9 @@ function proof(name: string): MissionEvidenceUpload {
     sizeBytes: 20, storagePath: `participant/course/module/evidence-1/${name}`,
     uploadedAt: new Date().toISOString() };
 }
-function progress(revision: number, uploads: MissionEvidenceUpload[]) {
+function progress(revision: number, uploads: MissionEvidenceUpload[], feedback = "") {
   return { id: "progress", module_id: "module", status: "in_progress",
-    mission_revision: revision, mission_progress: { ...emptyMissionProgress(), evidenceUploads: uploads } };
+    mission_revision: revision, mission_progress: { ...emptyMissionProgress(), evidenceUploads: uploads, feedback } };
 }
 const course = {
   id: "course", title: "Praktik aman", user_id: "author", modules: [{
@@ -60,8 +60,13 @@ const course = {
     } }],
   }],
 };
+async function reflectionEditor() {
+  // Wait for the authenticated viewer's reload, not the first anonymous render.
+  await waitFor(() => expect(mocks.getCourse).toHaveBeenCalledTimes(2));
+  return screen.findByRole("textbox", { name: "Catatan refleksi" });
+}
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   mocks.getCourse.mockResolvedValue({ data: course });
   mocks.getProgress.mockResolvedValue({ data: [progress(4, [])], error: null });
   mocks.reconcile.mockResolvedValue(true);
@@ -69,9 +74,158 @@ beforeEach(() => {
   mocks.upload.mockResolvedValue({ error: null });
   mocks.signedUrl.mockResolvedValue({ data: { signedUrl: "https://example.test/proof" } });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("participant evidence conflicts", () => {
+  it("compares, copies, edits and deliberately resaves only reflection with the newest evidence and revision", async () => {
+    render(<CoursePage />);
+    const editor = await reflectionEditor();
+    const server = progress(5, [proof("newest.png")], "Refleksi dari perangkat lain");
+    server.mission_progress.checkedPracticeIds = ["server-check"];
+    server.mission_progress.selectedDecision = "Keputusan server";
+    mocks.getProgress.mockResolvedValue({ data: [server], error: null });
+    mocks.save.mockResolvedValueOnce({ data: null, error: { code: "40001" } });
+    fireEvent.change(editor, { target: { value: "Refleksi lokal belum tersimpan" } });
+    fireEvent.blur(editor);
+    expect(await screen.findByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Refleksi lokal belum tersimpan");
+    expect(screen.getByRole("textbox", { name: "Refleksi versi server" })).toHaveValue(server.mission_progress.feedback);
+    expect(editor).toHaveValue(server.mission_progress.feedback);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    fireEvent.click(screen.getByRole("button", { name: "Salin draf lokal" }));
+    await screen.findByText("Draf refleksi disalin.");
+    expect(writeText).toHaveBeenCalledWith("Refleksi lokal belum tersimpan");
+    fireEvent.click(screen.getByRole("button", { name: "Pulihkan draf ke editor" }));
+    expect(editor).toHaveValue("Refleksi lokal belum tersimpan");
+    fireEvent.change(editor, { target: { value: "Refleksi lokal hasil perbandingan" } });
+    fireEvent.blur(editor);
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    mocks.save.mockImplementation(async (_course, _module, change) => ({
+      data: { ...server, mission_revision: 6, mission_progress: change.missionProgress }, error: null,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Simpan ulang refleksi" }));
+    await screen.findByText("Refleksi disimpan ulang. Bukti terbaru tetap dipertahankan.");
+    expect(mocks.save).toHaveBeenCalledTimes(2);
+    expect(mocks.save.mock.calls[1][2]).toMatchObject({
+      expectedMissionRevision: 5,
+      missionProgress: {
+        ...server.mission_progress, feedback: "Refleksi lokal hasil perbandingan",
+      },
+    });
+    expect(screen.getByText("newest.png")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Pemulihan refleksi" })).not.toBeInTheDocument();
+  });
+
+  it("retains the latest typed draft and invalidates older queued saves after conflict", async () => {
+    let resolveSave!: (value: unknown) => void;
+    mocks.save.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    render(<CoursePage />);
+    const editor = await reflectionEditor();
+    fireEvent.change(editor, { target: { value: "Draf pertama" } });
+    fireEvent.blur(editor);
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
+    fireEvent.change(editor, { target: { value: "Draf terakhir masih dalam antrean" } });
+    fireEvent.blur(editor);
+    mocks.getProgress.mockResolvedValue({ data: [progress(8, [proof("remote.png")], "Versi server terbaru")], error: null });
+    resolveSave({ data: null, error: { code: "40001" } });
+    await screen.findByText("remote.png");
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf terakhir masih dalam antrean"));
+    fireEvent.click(screen.getByRole("button", { name: "Gunakan versi server" }));
+    expect(editor).toHaveValue("Versi server terbaru");
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves the edited recovery draft if another device changes progress again", async () => {
+    render(<CoursePage />);
+    const editor = await reflectionEditor();
+    mocks.getProgress.mockResolvedValue({ data: [progress(5, [], "Server pertama")], error: null });
+    mocks.save.mockResolvedValue({ data: null, error: { code: "40001" } });
+    fireEvent.change(editor, { target: { value: "Draf lokal pertama" } });
+    fireEvent.blur(editor);
+    await screen.findByRole("region", { name: "Pemulihan refleksi" });
+    fireEvent.click(screen.getByRole("button", { name: "Pulihkan draf ke editor" }));
+    fireEvent.change(editor, { target: { value: "Draf pemulihan yang diedit" } });
+    mocks.getProgress.mockResolvedValue({ data: [progress(6, [proof("even-newer.png")], "Server kedua")], error: null });
+    fireEvent.click(screen.getByRole("button", { name: "Simpan ulang refleksi" }));
+    await screen.findByText("even-newer.png");
+    expect(screen.getByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf pemulihan yang diedit");
+    expect(screen.getByRole("textbox", { name: "Refleksi versi server" })).toHaveValue("Server kedua");
+    expect(mocks.save.mock.calls[1][2].expectedMissionRevision).toBe(5);
+  });
+
+  it("blocks competing edits while an explicit reflection recovery save is in flight", async () => {
+    render(<CoursePage />);
+    const editor = await reflectionEditor();
+    const server = progress(5, [proof("remote.png")], "Refleksi server");
+    mocks.getProgress.mockResolvedValue({ data: [server], error: null });
+    mocks.save.mockResolvedValueOnce({ data: null, error: { code: "40001" } });
+    fireEvent.change(editor, { target: { value: "Refleksi yang dipulihkan" } });
+    fireEvent.blur(editor);
+    await screen.findByRole("region", { name: "Pemulihan refleksi" });
+    fireEvent.click(screen.getByRole("button", { name: "Pulihkan draf ke editor" }));
+    let resolveSave!: (value: unknown) => void;
+    mocks.save.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Simpan ulang refleksi" }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+    expect(editor).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Periksa kondisi/ })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Hapus/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Gunakan versi server" })).toBeDisabled();
+    resolveSave({ data: { ...server, mission_revision: 6,
+      mission_progress: { ...server.mission_progress, feedback: "Refleksi yang dipulihkan" } }, error: null });
+    await screen.findByText("Refleksi disimpan ulang. Bukti terbaru tetap dipertahankan.");
+    expect(editor).toHaveValue("Refleksi yang dipulihkan");
+    expect(mocks.save).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains a copyable draft when saving and the refresh both lose connection", async () => {
+    render(<CoursePage />);
+    const editor = await reflectionEditor();
+    mocks.save.mockResolvedValueOnce({ data: null, error: { code: "40001" } });
+    mocks.getProgress.mockRejectedValueOnce(new Error("connection lost"));
+    fireEvent.change(editor, { target: { value: "Draf sebelum koneksi terputus" } });
+    fireEvent.blur(editor);
+    await screen.findByText("Penyimpanan belum dapat dipastikan. Muat ulang halaman sebelum mencoba lagi.");
+    expect(screen.getByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf sebelum koneksi terputus");
+    expect(screen.getByRole("button", { name: "Pulihkan draf ke editor" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Salin draf lokal" })).toBeEnabled();
+  });
+
+  it("allows copying but blocks restoration when refresh fails", async () => {
+    render(<CoursePage />);
+    const editor = await reflectionEditor();
+    mocks.save.mockResolvedValue({ data: null, error: { code: "40001" } });
+    mocks.getProgress.mockResolvedValue({ data: null, error: new Error("offline") });
+    fireEvent.change(editor, { target: { value: "Draf aman saat offline" } });
+    fireEvent.blur(editor);
+    await screen.findByRole("region", { name: "Pemulihan refleksi" });
+    expect(screen.getByRole("button", { name: "Pulihkan draf ke editor" })).toBeDisabled();
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    fireEvent.click(screen.getByRole("button", { name: "Salin draf lokal" }));
+    await screen.findByText(/Pilih teks draf lokal lalu salin secara manual/);
+    expect(screen.getByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf aman saat offline");
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps completed server progress locked while still offering a copy of the local draft", async () => {
+    render(<CoursePage />);
+    const editor = await reflectionEditor();
+    mocks.getProgress.mockResolvedValue({
+      data: [{ ...progress(5, [proof("completed.png")], "Refleksi selesai"), status: "completed" }], error: null,
+    });
+    mocks.save.mockResolvedValue({ data: null, error: { code: "40001" } });
+    fireEvent.change(editor, { target: { value: "Draf sebelum selesai" } });
+    fireEvent.blur(editor);
+    await screen.findByText("completed.png");
+    expect(screen.getByRole("button", { name: "Pulihkan draf ke editor" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Salin draf lokal" })).toBeEnabled();
+    expect(editor).toBeDisabled();
+  });
+
   it("reloads another device's evidence instead of rolling back to the stale local snapshot", async () => {
     const { container } = render(<CoursePage />);
     await screen.findByText("Foto hasil");
