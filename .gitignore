@@ -8,6 +8,7 @@
 
 # testing
 /coverage
+/generated-artifacts/
 
 # next.js
 /.next/
