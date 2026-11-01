@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { clearOtherReflectionDrafts } from "@/lib/reflectionDraft";
 
 interface AuthState {
   user: User | null;
@@ -39,6 +40,7 @@ export function useAuth(): AuthState {
     }
 
     function applyUser(nextUser: User | null) {
+      clearOtherReflectionDrafts(nextUser?.id ?? null);
       const expectedRevision = ++revision;
       clearTimeout(profileTimer);
       setUser(nextUser);

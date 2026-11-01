@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getCourse: vi.fn(), getProgress: vi.fn(), save: vi.fn(),
   reconcile: vi.fn(), upload: vi.fn(), signedUrl: vi.fn(),
   getReview: vi.fn(), rpc: vi.fn(), getUser: vi.fn(),
+  authListener: null as null | ((event: string, session: { user: { id: string } } | null) => void),
 }));
 vi.mock("next/router", () => ({ useRouter: () => ({ query: { id: "course" } }) }));
 vi.mock("next/head", () => ({ default: () => null }));
@@ -33,13 +34,19 @@ vi.mock("@/integrations/supabase/client", () => ({
     rpc: mocks.rpc,
     auth: {
       getUser: mocks.getUser,
-      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      onAuthStateChange: (listener: typeof mocks.authListener) => {
+        mocks.authListener = listener;
+        return { data: { subscription: { unsubscribe() { mocks.authListener = null; } } } };
+      },
     },
     storage: { from: () => ({ upload: mocks.upload, createSignedUrl: mocks.signedUrl }) },
   },
 }));
 import CoursePage from "@/pages/course/[id]";
 import { emptyMissionProgress, type MissionEvidenceUpload } from "@/lib/workplaceMission";
+import { reflectionDraftKey, writeReflectionDraft } from "@/lib/reflectionDraft";
+
+const draftScope = { accountId: "participant", courseId: "course", moduleId: "module" };
 
 function proof(name: string): MissionEvidenceUpload {
   return { evidenceId: "evidence-1", fileName: name, mimeType: "image/png",
@@ -73,6 +80,7 @@ function deferred<T>() {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
   mocks.getUser.mockResolvedValue({ data: { user: { id: "participant" } } });
   mocks.getCourse.mockResolvedValue({ data: course });
   mocks.getProgress.mockResolvedValue({ data: [progress(4, [])], error: null });
@@ -87,6 +95,127 @@ afterEach(() => {
 });
 
 describe("participant evidence conflicts", () => {
+  it("offers a persisted draft after conflict and refresh, then saves only text against the latest revision", async () => {
+    const view = render(<CoursePage />);
+    const editor = await waitForAuthenticatedCourse();
+    const server = progress(9, [proof("latest.png")], "Teks dari server");
+    mocks.save.mockResolvedValueOnce({ data: null, error: { code: "40001" } });
+    mocks.getProgress.mockResolvedValue({ data: [server], error: null });
+    fireEvent.change(editor, { target: { value: "Draf bertahan setelah refresh" } });
+    fireEvent.blur(editor);
+    await screen.findByText("latest.png");
+    expect(JSON.parse(localStorage.getItem(reflectionDraftKey(draftScope))!)).toEqual({
+      version: 1, feedback: "Draf bertahan setelah refresh",
+    });
+    view.unmount();
+    mocks.getCourse.mockClear();
+    render(<CoursePage />);
+    const reloadedEditor = await waitForAuthenticatedCourse();
+    expect(await screen.findByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf bertahan setelah refresh");
+    expect(reloadedEditor).toHaveValue("Teks dari server");
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Pulihkan draf ke editor" }));
+    fireEvent.change(reloadedEditor, { target: { value: "Draf dipulihkan dan diedit" } });
+    expect(JSON.parse(localStorage.getItem(reflectionDraftKey(draftScope))!).feedback).toBe("Draf dipulihkan dan diedit");
+    mocks.save.mockImplementation(async (_course, _module, change) => ({
+      data: { ...server, mission_revision: 10, mission_progress: change.missionProgress }, error: null,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Simpan ulang refleksi" }));
+    await screen.findByText("Refleksi disimpan ulang. Bukti terbaru tetap dipertahankan.");
+    expect(mocks.save.mock.calls[1][2]).toMatchObject({
+      expectedMissionRevision: 9,
+      missionProgress: { ...server.mission_progress, feedback: "Draf dipulihkan dan diedit" },
+    });
+    expect(localStorage.getItem(reflectionDraftKey(draftScope))).toBeNull();
+  });
+
+  it("keeps unblurred edits through refresh and lets the participant explicitly delete them", async () => {
+    const view = render(<CoursePage />);
+    fireEvent.change(await waitForAuthenticatedCourse(), { target: { value: "Belum meninggalkan editor" } });
+    view.unmount();
+    mocks.getCourse.mockClear();
+    render(<CoursePage />);
+    await waitForAuthenticatedCourse();
+    expect(await screen.findByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Belum meninggalkan editor");
+    fireEvent.click(screen.getByRole("button", { name: "Hapus draf lokal" }));
+    expect(localStorage.getItem(reflectionDraftKey(draftScope))).toBeNull();
+    expect(screen.queryByRole("region", { name: "Pemulihan refleksi" })).not.toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it("does not restore drafts belonging to a different course or module", async () => {
+    writeReflectionDraft({ ...draftScope, courseId: "another-course" }, "Draf course lain");
+    writeReflectionDraft({ ...draftScope, moduleId: "another-module" }, "Draf modul lain");
+    render(<CoursePage />);
+    const editor = await waitForAuthenticatedCourse();
+    expect(editor).toHaveValue("");
+    expect(screen.queryByRole("region", { name: "Pemulihan refleksi" })).not.toBeInTheDocument();
+    expect(localStorage.length).toBe(2);
+  });
+
+  it("clears old account drafts and ignores its pending save after an account switch", async () => {
+    const save = deferred<unknown>();
+    mocks.save.mockReturnValueOnce(save.promise);
+    render(<CoursePage />);
+    const editor = await waitForAuthenticatedCourse();
+    fireEvent.change(editor, { target: { value: "Rahasia akun pertama" } });
+    fireEvent.blur(editor);
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
+    await act(async () => { mocks.authListener?.("SIGNED_IN", { user: { id: "another-account" } }); });
+    await screen.findByRole("textbox", { name: "Catatan refleksi" });
+    await act(async () => { save.resolve({ data: null, error: { code: "40001" } }); });
+    expect(localStorage.getItem(reflectionDraftKey(draftScope))).toBeNull();
+    expect(screen.queryByDisplayValue("Rahasia akun pertama")).not.toBeInTheDocument();
+    await act(async () => { mocks.authListener?.("SIGNED_IN", { user: { id: "participant" } }); });
+    await screen.findByRole("textbox", { name: "Catatan refleksi" });
+    expect(screen.queryByRole("region", { name: "Pemulihan refleksi" })).not.toBeInTheDocument();
+  });
+
+  it("clears drafts on sign-out and removes other accounts' persisted drafts at startup", async () => {
+    writeReflectionDraft({ ...draftScope, accountId: "old-account" }, "Akun lama");
+    render(<CoursePage />);
+    const editor = await waitForAuthenticatedCourse();
+    expect(localStorage.length).toBe(0);
+    fireEvent.change(editor, { target: { value: "Draf sebelum keluar" } });
+    await act(async () => { mocks.authListener?.("SIGNED_OUT", null); });
+    expect(localStorage.length).toBe(0);
+  });
+
+  it("does not delete newer edits when an older save succeeds", async () => {
+    const save = deferred<unknown>();
+    mocks.save.mockReturnValueOnce(save.promise);
+    render(<CoursePage />);
+    const editor = await waitForAuthenticatedCourse();
+    fireEvent.change(editor, { target: { value: "Teks pertama" } });
+    fireEvent.blur(editor);
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
+    fireEvent.change(editor, { target: { value: "Teks kedua belum disimpan" } });
+    await act(async () => { save.resolve({ data: progress(5, [], "Teks pertama"), error: null }); });
+    expect(JSON.parse(localStorage.getItem(reflectionDraftKey(draftScope))!).feedback).toBe("Teks kedua belum disimpan");
+  });
+
+  it("blocks restoring a saved draft until the server revision can be loaded", async () => {
+    writeReflectionDraft(draftScope, "Draf tersimpan");
+    mocks.getProgress.mockResolvedValue({ data: null, error: new Error("offline") });
+    render(<CoursePage />);
+    await waitForAuthenticatedCourse();
+    await screen.findByRole("textbox", { name: "Draf refleksi lokal" });
+    expect(screen.getByRole("button", { name: "Pulihkan draf ke editor" })).toBeDisabled();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it("warns instead of claiming refresh protection when browser storage is unavailable", async () => {
+    render(<CoursePage />);
+    const editor = await waitForAuthenticatedCourse();
+    const spy = vi.spyOn(window, "localStorage", "get").mockReturnValue({
+      setItem: () => { throw new Error("quota"); },
+    } as unknown as Storage);
+    fireEvent.change(editor, { target: { value: "Draf tanpa penyimpanan" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Salin refleksi sebelum memuat ulang");
+    expect(editor).toHaveValue("Draf tanpa penyimpanan");
+    spy.mockRestore();
+  });
+
   it("waits for authentication and the committed reload before interacting with evidence", async () => {
     const auth = deferred<{ data: { user: { id: string } } }>();
     const reload = deferred<{ data: ReturnType<typeof progress>[]; error: null }>();
@@ -217,7 +346,7 @@ describe("participant evidence conflicts", () => {
     await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
     expect(editor).toBeDisabled();
     expect(screen.getByRole("button", { name: /Periksa kondisi/ })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: /Hapus/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Hapus (?!draf)/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Gunakan versi server" })).toBeDisabled();
     resolveSave({ data: { ...server, mission_revision: 6,
       mission_progress: { ...server.mission_progress, feedback: "Refleksi yang dipulihkan" } }, error: null });
@@ -299,7 +428,7 @@ describe("participant evidence conflicts", () => {
     expect(screen.getByText("uncertain.png")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Coba muat data terbaru" })).toBeEnabled());
     expect(container.querySelector('input[type="file"]')).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Hapus/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Hapus (?!draf)/ })).not.toBeInTheDocument();
     mocks.getProgress.mockResolvedValue({ data: [progress(5, [proof("uncertain.png")])], error: null });
     fireEvent.click(screen.getByRole("button", { name: "Coba muat data terbaru" }));
     await screen.findByText(/sebagian perubahan mungkin sudah tersimpan/);

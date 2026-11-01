@@ -9,3 +9,4 @@
 - [Evidence cleanup safety](evidence-cleanup-safety.md) — a lost save response is not a failed commit; only server-confirmed retired uploads may be deleted.
 - [Cleanup monitoring trust](cleanup-monitoring-trust.md) — browser failure reports are advisory; outstanding Storage objects determine backlog and recovery.
 - [Local Supabase container health](local-supabase-container-health.md) — this Replit Docker runtime can block container health-check execs; do not confuse it with application failures.
+- [Reflection draft safety](reflection-draft-safety.md) — durable recovery is text-only and explicit; never replay evidence snapshots or clear newer edits after an older save.

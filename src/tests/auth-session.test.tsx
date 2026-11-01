@@ -2,6 +2,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useAuth } from "@/hooks/useAuth";
+import { readReflectionDraft, writeReflectionDraft } from "@/lib/reflectionDraft";
 
 const mocks = vi.hoisted(() => ({
   listener: null as null | ((event: string, session: unknown) => void),
@@ -29,6 +30,23 @@ beforeEach(() => {
   mocks.profile.mockResolvedValue({ data: { role: "user" } });
 });
 afterEach(cleanup);
+
+it("preserves drafts on same-account refresh but removes them on account switch outside the course page", async () => {
+  const scope = { accountId: "first", courseId: "course", moduleId: "module" };
+  writeReflectionDraft(scope, "Private reflection");
+  mocks.getSession.mockResolvedValue({ data: { session: session("first") } });
+  const { result } = renderHook(() => useAuth());
+  await waitFor(() => expect(result.current.userId).toBe("first"));
+  expect(readReflectionDraft(scope)).toBe("Private reflection");
+  act(() => mocks.listener?.("TOKEN_REFRESHED", session("first")));
+  expect(readReflectionDraft(scope)).toBe("Private reflection");
+  act(() => mocks.listener?.("SIGNED_IN", session("second")));
+  expect(readReflectionDraft(scope)).toBeNull();
+  const secondScope = { ...scope, accountId: "second" };
+  writeReflectionDraft(secondScope, "Another reflection");
+  act(() => mocks.listener?.("SIGNED_OUT", null));
+  expect(readReflectionDraft(secondScope)).toBeNull();
+});
 
 it("ignores a late admin profile response after logout", async () => {
   let resolveProfile!: (value: unknown) => void;

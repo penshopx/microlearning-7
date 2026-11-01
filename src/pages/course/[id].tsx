@@ -24,6 +24,10 @@ import {
 } from "lucide-react";
 import { SEO } from "@/components/SEO";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  clearOtherReflectionDrafts, readReflectionDraft, writeReflectionDraft, removeReflectionDraft,
+  type ReflectionDraftScope,
+} from "@/lib/reflectionDraft";
 import { formatTimestamp } from "@/lib/supervisorReview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,12 +121,14 @@ export default function CoursePage() {
   const [legacyAnswers, setLegacyAnswers] = useState<Record<string, string>>({});
   const [legacySubmitted, setLegacySubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [progressLoaded, setProgressLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncRequired, setSyncRequired] = useState(false);
   const [refreshingProgress, setRefreshingProgress] = useState(false);
   const [reflectionDraft, setReflectionDraft] = useState<string | null>(null);
   const [restoredReflection, setRestoredReflection] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
+  const [draftStorageError, setDraftStorageError] = useState("");
   const [finalizing, setFinalizing] = useState(false);
   const [uploadingEvidenceId, setUploadingEvidenceId] = useState<string | null>(null);
   const [removingEvidenceId, setRemovingEvidenceId] = useState<string | null>(null);
@@ -149,6 +155,8 @@ export default function CoursePage() {
     let active = true;
     let authEventReceived = false;
     const updateViewer = (id: string | null) => {
+      if (!active) return;
+      clearOtherReflectionDrafts(id);
       if (!active || viewerIdRef.current === id) return;
       viewerIdRef.current = id;
       setViewerId(id);
@@ -160,6 +168,7 @@ export default function CoursePage() {
       setReflectionDraft(null);
       setRestoredReflection(null);
       setCopyMessage("");
+      setDraftStorageError("");
       setEvidenceUrls({});
     };
     void supabase.auth.getUser().then(({ data }) => {
@@ -182,6 +191,7 @@ export default function CoursePage() {
 
     let active = true;
     setLoading(true);
+    setProgressLoaded(false);
     Promise.all([
       microLearningService.getCourseWithModules(courseId),
       microLearningService.getLearnerProgress(courseId),
@@ -194,6 +204,7 @@ export default function CoursePage() {
           (row) => [row.module_id, row.mission_revision]
         ));
       }
+      setProgressLoaded(!progressResult.error && Boolean(progressResult.data));
       setLoading(false);
     });
 
@@ -211,6 +222,26 @@ export default function CoursePage() {
   }, [viewerId]);
 
   const currentModule = course?.modules?.[currentModuleIndex];
+  const draftScope: ReflectionDraftScope | null = viewerId && currentModule
+    ? { accountId: viewerId, courseId, moduleId: currentModule.id } : null;
+  const storeDraft = (feedback: string) => {
+    if (!draftScope || viewerIdRef.current !== draftScope.accountId) return;
+    try {
+      writeReflectionDraft(draftScope, feedback);
+      setDraftStorageError("");
+    } catch {
+      setDraftStorageError("Draf tidak dapat disimpan di perangkat ini. Salin refleksi sebelum memuat ulang halaman.");
+    }
+  };
+  const clearStoredDraft = (confirmedFeedback?: string) => {
+    if (!draftScope) return;
+    try {
+      removeReflectionDraft(draftScope, confirmedFeedback);
+      setDraftStorageError("");
+    } catch {
+      setDraftStorageError("Draf lokal belum dapat dihapus dari perangkat ini.");
+    }
+  };
   activeModuleRef.current = currentModule?.id;
   const moduleProgress = progress.find((item) => item.module_id === currentModule?.id);
   const mission = useMemo<WorkplaceMission | null>(() => {
@@ -257,6 +288,24 @@ export default function CoursePage() {
     finalizingRef.current = false;
     setEvidenceUrls({});
   }, [currentModule?.id]);
+
+  useEffect(() => {
+    if (!loading && !progressLoaded) {
+      saveBlockedRef.current = true;
+      setSyncRequired(true);
+      setErrorMessage("Progres terbaru belum berhasil dimuat. Muat data terbaru sebelum memulihkan draf.");
+    }
+  }, [loading, progressLoaded, currentModule?.id]);
+
+  useEffect(() => {
+    if (!viewerId || !currentModule?.id || loading) return;
+    try {
+      const feedback = readReflectionDraft({ accountId: viewerId, courseId, moduleId: currentModule.id });
+      if (feedback !== null) setReflectionDraft(feedback);
+    } catch {
+      setDraftStorageError("Draf tidak dapat dibaca dari perangkat ini.");
+    }
+  }, [viewerId, courseId, currentModule?.id, loading]);
 
   useEffect(() => {
     let active = true;
@@ -407,6 +456,7 @@ export default function CoursePage() {
         // Capture the latest editor value, not the older snapshot whose save
         // failed: newer reflection edits may already be queued behind it.
         setReflectionDraft(localReflectionRef.current);
+        storeDraft(localReflectionRef.current);
         setRestoredReflection(null);
         setCopyMessage("");
         // Invalidate already queued stale snapshots as well. A lost response is
@@ -423,10 +473,16 @@ export default function CoursePage() {
 
       revisionRef.current[moduleId] = result.data.mission_revision;
       setProgress((current) => mergeProgress(current, result.data));
+      // A confirmed older save must not discard text typed while it was in flight.
+      if (result.data.mission_progress &&
+        normalizeMissionProgress(result.data.mission_progress).feedback === localReflectionRef.current) {
+        clearStoredDraft(localReflectionRef.current);
+      }
       return true;
     }).catch(async () => {
       if (operationContext !== saveContextRef.current) return false;
       setReflectionDraft(localReflectionRef.current);
+      storeDraft(localReflectionRef.current);
       setRestoredReflection(null);
       const refreshContext = ++saveContextRef.current;
       saveBlockedRef.current = true;
@@ -1138,6 +1194,7 @@ export default function CoursePage() {
                       value={restoredReflection ?? missionProgress.feedback}
                       onChange={(event) => {
                         localReflectionRef.current = event.target.value;
+                        storeDraft(event.target.value);
                         if (reflectionDraft !== null) {
                           setRestoredReflection(event.target.value);
                         } else {
@@ -1151,6 +1208,7 @@ export default function CoursePage() {
                       placeholder="Tulis refleksi singkat (minimal 10 karakter)..."
                       className="mt-4 min-h-28 border-white/15 bg-black/25 text-white placeholder:text-slate-500"
                     />
+                    {draftStorageError && <p role="alert" className="mt-3 text-sm text-amber-100">{draftStorageError}</p>}
                     {reflectionDraft !== null && (
                       <section aria-label="Pemulihan refleksi" className="mt-4 space-y-3 rounded-xl border border-amber-300/30 bg-amber-950/30 p-4">
                         <h4 className="font-semibold text-amber-100">Bandingkan refleksi sebelum menyimpan ulang</h4>
@@ -1178,10 +1236,19 @@ export default function CoursePage() {
                             <Button type="button" disabled={missionLocked || saving} onClick={() => void saveRestoredReflection()}>Simpan ulang refleksi</Button>
                           )}
                           <Button type="button" variant="outline" disabled={saving || syncRequired} onClick={() => {
+                            clearStoredDraft();
+                            setMissionProgress(normalizeMissionProgress(moduleProgress?.mission_progress));
                             setReflectionDraft(null);
                             setRestoredReflection(null);
                             setCopyMessage("");
                           }}>Gunakan versi server</Button>
+                          <Button type="button" variant="outline" disabled={saving} onClick={() => {
+                            clearStoredDraft();
+                            setMissionProgress(normalizeMissionProgress(moduleProgress?.mission_progress));
+                            setReflectionDraft(null);
+                            setRestoredReflection(null);
+                            setCopyMessage("");
+                          }}>Hapus draf lokal</Button>
                         </div>
                         {restoredReflection !== null && <p className="text-sm text-amber-100">Draf dipulihkan ke editor. Edit bila perlu, lalu tekan Simpan ulang refleksi.</p>}
                         {copyMessage && <p role="status" className="text-sm text-amber-100">{copyMessage}</p>}
