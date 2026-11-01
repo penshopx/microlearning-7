@@ -80,3 +80,37 @@ by its participant; coaching stays visible during revision and the next completi
 returns the submission to pending. Approved submissions cannot be reopened.
 Supervisors receive 60-second signed URLs; revocation immediately blocks new URL
 creation, but an already issued URL remains valid until its expiry.
+
+## Evidence cleanup operational status
+
+Apply `20261105000000_evidence_cleanup_health.sql` through the normal Supabase
+migration process before using the cleanup card at `/admin`. The fork does not
+apply migrations to the shared remote database. Missing migration / unavailable
+database is shown as unavailable, not healthy.
+
+Only a verified signed-in account whose `profiles.role` is `admin` can call the
+health RPC. The migration also prevents `authenticated` / `anon` profile writes
+from changing roles or inserting an admin role, even under permissive profile
+edit policies. Role assignment remains a trusted database / service-role action.
+Neither admins nor participants receive queue rows through the health endpoint:
+it returns counts and the oldest eligible timestamp only.
+
+Warn at 24 hours after deletion eligibility, or after 3 owner-reported Storage
+failures spanning at least 10 minutes. Count at most one failure per object per
+5 minutes, using database time. Reports are advisory browser observations, not
+trusted provider telemetry. Attached evidence and unexpired staged uploads are
+excluded. Existing garbage starts its clock at migration time because its
+original retirement timestamp was not stored. Expired staged uploads count
+from expiry, even before their owner revisits.
+
+The card refreshes every minute and on demand, with no repeated toast/email.
+Deleted Storage objects stop contributing immediately on the next refresh,
+despite retained safety tombstones. Cleanup still runs only through participant
+visits/mutations; this change does not add an automatic cleanup worker. If
+warnings persist, check Storage availability and delete policies without copying
+private paths or evidence into logs/tickets.
+
+`npm run test:integration:evidence` includes actual SQL authorization, role
+escalation prevention, retry deduplication, delay thresholds, and recovery tests
+in an isolated local PostgreSQL cluster. UI and endpoint checks are in
+`src/tests/evidence-cleanup-*.test.*`.

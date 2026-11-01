@@ -8,6 +8,7 @@ for binary in initdb pg_ctl psql; do
     exit 1
   }
 done
+
 TEMP="$(mktemp -d)"
 cleanup() {
   pg_ctl -D "$TEMP/data" -m immediate stop >/dev/null 2>&1 || true
@@ -67,3 +68,9 @@ SQL
     'overlapping $action has exactly one winner and one explicit conflict');" >/dev/null
   echo "PASS: overlapping two-connection $action"
 done
+
+# Cleanup observability uses the same profiles role as the existing admin API.
+# Surrounding profile schema is not part of the minimal evidence fixture.
+"${PSQL[@]}" -c "CREATE TABLE public.profiles(id UUID PRIMARY KEY, role TEXT DEFAULT 'user'); GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261105000000_evidence_cleanup_health.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/tests/mission_cleanup_health.sql"

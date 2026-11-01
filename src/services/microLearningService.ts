@@ -356,8 +356,19 @@ export const microLearningService = {
     if (error) return false;
     const paths = (data || []).map((item: { storage_path: string }) => item.storage_path);
     if (!paths.length) return true;
-    const { error: removeError } = await supabase.storage.from("mission-evidence").remove(paths);
-    return !removeError;
+    try {
+      const { error: removeError } = await supabase.storage.from("mission-evidence").remove(paths);
+      if (!removeError) return true;
+    } catch {
+      // Network failures also leave the durable queue intact.
+    }
+    try {
+      // No raw Storage error, filename, or evidence content is recorded.
+      await supabase.rpc("record_mission_cleanup_failure", { p_paths: paths });
+    } catch {
+      // Reporting cannot turn a failed cleanup into a successful one.
+    }
+    return false;
   },
 
   /**

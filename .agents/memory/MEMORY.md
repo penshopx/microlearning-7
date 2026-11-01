@@ -7,4 +7,5 @@
 - [Supervisor evidence consent](supervisor-evidence-consent.md) — course authorship is not a supervisory relationship; proof access needs explicit participant-scoped authorization.
 - [Upsert trigger ordering](upsert-trigger-ordering.md) — INSERT triggers run before conflict handling; evidence validation can reject omitted fields before stored state is merged.
 - [Evidence cleanup safety](evidence-cleanup-safety.md) — a lost save response is not a failed commit; only server-confirmed retired uploads may be deleted.
+- [Cleanup monitoring trust](cleanup-monitoring-trust.md) — browser failure reports are advisory; outstanding Storage objects determine backlog and recovery.
 - [Local Supabase container health](local-supabase-container-health.md) — this Replit Docker runtime can block container health-check execs; do not confuse it with application failures.

@@ -95,6 +95,14 @@ describe("Storage reconciliation", () => {
     mocks.rpc.mockResolvedValue({ data: [{ storage_path: "retired" }], error: null });
     mocks.remove.mockResolvedValue({ error: new Error("offline") });
     expect(await microLearningService.reconcileEvidence()).toBe(false);
+    expect(mocks.rpc).toHaveBeenLastCalledWith("record_mission_cleanup_failure", { p_paths: ["retired"] });
+  });
+  it("records thrown network failures without forwarding error text", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: [{ storage_path: "retired" }], error: null })
+      .mockRejectedValueOnce(new Error("reporting unavailable"));
+    mocks.remove.mockRejectedValueOnce(new Error("private Storage body"));
+    expect(await microLearningService.reconcileEvidence()).toBe(false);
+    expect(mocks.rpc).toHaveBeenLastCalledWith("record_mission_cleanup_failure", { p_paths: ["retired"] });
   });
   it("does not attempt deletion when reconciliation fails", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: new Error("offline") });

@@ -1728,6 +1728,14 @@ export type Database = {
         Args: { p_abandon_path?: string | null }
         Returns: { storage_path: string }[]
       }
+      record_mission_cleanup_failure: {
+        Args: { p_paths: string[] }
+        Returns: undefined
+      }
+      get_mission_cleanup_health: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       award_achievement: {
         Args: {
           p_achievement_type: string

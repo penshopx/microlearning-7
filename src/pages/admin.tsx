@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { PageHeader } from "@/components/PageHeader";
+import { EvidenceCleanupStatus } from "@/components/admin/EvidenceCleanupStatus";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { AIHealthResponse } from "@/pages/api/ai/health";
@@ -167,6 +168,7 @@ export default function AdminPage() {
             </p>
           </div>
 
+          <EvidenceCleanupStatus key={user?.id} />
           {/* ── AI key warning banner ─────────────────────────────────────── */}
           {health.state === "done" && hasProblem && (
             <Alert
