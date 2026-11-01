@@ -119,6 +119,7 @@ export default function CoursePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncRequired, setSyncRequired] = useState(false);
+  const [refreshingProgress, setRefreshingProgress] = useState(false);
   const [reflectionDraft, setReflectionDraft] = useState<string | null>(null);
   const [restoredReflection, setRestoredReflection] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
@@ -138,6 +139,8 @@ export default function CoursePage() {
   const revisionRef = useRef<Record<string, number>>({});
   const saveContextRef = useRef(0);
   const saveBlockedRef = useRef(false);
+  const recoveryRequestRef = useRef(false);
+  const recoveryConflictRef = useRef(false);
   const activeModuleRef = useRef<string | undefined>(undefined);
   const localReflectionRef = useRef("");
   localReflectionRef.current = restoredReflection ?? missionProgress.feedback;
@@ -330,6 +333,40 @@ export default function CoursePage() {
     reflectionComplete
   );
 
+  // Recovery reads only: never replay a snapshot whose commit is uncertain.
+  const refreshMissionProgress = async (moduleId: string, context: number) => {
+    if (recoveryRequestRef.current) return;
+    recoveryRequestRef.current = true;
+    setRefreshingProgress(true);
+    try {
+      const latest = await microLearningService.getLearnerProgress(courseId);
+      if (context !== saveContextRef.current) return;
+      if (latest.error || !latest.data) throw new Error("Progress unavailable");
+      setProgress(latest.data);
+      revisionRef.current = Object.fromEntries(latest.data.map(
+        (row) => [row.module_id, row.mission_revision]
+      ));
+      if (activeModuleRef.current === moduleId) {
+        setMissionProgress(normalizeMissionProgress(
+          latest.data.find((row) => row.module_id === moduleId)?.mission_progress
+        ));
+      }
+      saveBlockedRef.current = false;
+      setSyncRequired(false);
+      setErrorMessage(recoveryConflictRef.current
+        ? "Progres berubah di tab atau perangkat lain. Perubahan ini tidak disimpan. Data terbaru berhasil dimuat. Periksa ceklis, pilihan, bukti, dan refleksi sebelum mengulangi perubahan secara manual."
+        : "Data terbaru berhasil dimuat. Respons penyimpanan sebelumnya tidak diterima, sehingga sebagian perubahan mungkin sudah tersimpan. Periksa ceklis, pilihan, bukti, dan refleksi sebelum mengulangi perubahan secara manual.");
+    } catch {
+      if (context !== saveContextRef.current) return;
+      setErrorMessage(recoveryConflictRef.current
+        ? "Progres berubah di tab atau perangkat lain. Perubahan ini tidak disimpan, dan data terbaru belum berhasil dimuat. Coba muat data terbaru sebelum mengedit lagi. Draf refleksi dan bukti lokal tetap dipertahankan; bukti belum dipastikan tersimpan."
+        : "Penyimpanan belum dapat dipastikan dan data terbaru belum berhasil dimuat. Coba muat data terbaru sebelum mengedit lagi. Draf refleksi dan bukti lokal tetap dipertahankan; bukti belum dipastikan tersimpan.");
+    } finally {
+      recoveryRequestRef.current = false;
+      setRefreshingProgress(false);
+    }
+  };
+
   const persistMissionProgress = (
     next: MissionProgress,
     status: "in_progress" | "completed" = "in_progress"
@@ -363,7 +400,7 @@ export default function CoursePage() {
         missionProgress: next,
         expectedMissionRevision: revisionRef.current[moduleId] ?? 0,
         awardCompletion: moduleProgress?.status !== "completed",
-      });
+      }).catch((error: unknown) => ({ data: null, error }));
       if (context !== saveContextRef.current) return false;
 
       if (result.error || !result.data) {
@@ -378,38 +415,24 @@ export default function CoursePage() {
         operationContext = refreshContext;
         saveBlockedRef.current = true;
         setSyncRequired(true);
-        const latest = await microLearningService.getLearnerProgress(courseId);
-        if (refreshContext !== saveContextRef.current) return false;
-        if (latest.data && !latest.error) {
-          setProgress(latest.data);
-          revisionRef.current = Object.fromEntries(latest.data.map(
-            (row) => [row.module_id, row.mission_revision]
-          ));
-          if (activeModuleRef.current === moduleId) {
-            setMissionProgress(normalizeMissionProgress(
-              latest.data.find((row) => row.module_id === moduleId)?.mission_progress
-            ));
-          }
-          saveBlockedRef.current = false;
-          setSyncRequired(false);
-        }
-        setErrorMessage(result.error && "code" in result.error && result.error.code === "40001"
-          ? "Progres berubah di tab atau perangkat lain. Perubahan ini tidak disimpan. Data terbaru dimuat; periksa lalu ulangi perubahanmu."
-          : "Penyimpanan belum dapat dipastikan. Periksa data terbaru sebelum mencoba lagi. Jika belum dimuat, muat ulang halaman.");
+        recoveryConflictRef.current = Boolean(result.error &&
+          typeof result.error === "object" && "code" in result.error && result.error.code === "40001");
+        await refreshMissionProgress(moduleId, refreshContext);
         return false;
       }
 
       revisionRef.current[moduleId] = result.data.mission_revision;
       setProgress((current) => mergeProgress(current, result.data));
       return true;
-    }).catch(() => {
+    }).catch(async () => {
       if (operationContext !== saveContextRef.current) return false;
       setReflectionDraft(localReflectionRef.current);
       setRestoredReflection(null);
-      saveContextRef.current++;
+      const refreshContext = ++saveContextRef.current;
       saveBlockedRef.current = true;
       setSyncRequired(true);
-      setErrorMessage("Penyimpanan belum dapat dipastikan. Muat ulang halaman sebelum mencoba lagi.");
+      recoveryConflictRef.current = false;
+      await refreshMissionProgress(moduleId, refreshContext);
       return false;
     }).finally(() => {
       if (sequence === saveSequenceRef.current) setSaving(false);
@@ -1336,6 +1359,24 @@ export default function CoursePage() {
                 <p role="alert" className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-200">
                   {errorMessage}
                 </p>
+              )}
+              {syncRequired && (
+                <div className="rounded-xl border border-amber-300/30 bg-amber-950/30 p-4 text-sm text-amber-100">
+                  <p>Pengeditan dihentikan sampai data server tersedia. Tombol ini hanya memuat data, tidak mengirim ulang perubahan atau menghapus bukti. Salin draf refleksi sebelum meninggalkan halaman.</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-3"
+                    disabled={refreshingProgress || saving || evidenceBusy}
+                    onClick={() => {
+                      if (currentModule && saveBlockedRef.current) {
+                        void refreshMissionProgress(currentModule.id, saveContextRef.current);
+                      }
+                    }}
+                  >
+                    {refreshingProgress ? "Memuat data terbaru..." : "Coba muat data terbaru"}
+                  </Button>
+                </div>
               )}
               {completionMessage && (
                 <p role="status" className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">

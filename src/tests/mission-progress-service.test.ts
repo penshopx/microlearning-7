@@ -5,11 +5,13 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   remove: vi.fn(),
   getUser: vi.fn(),
+  from: vi.fn(),
 }));
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: { getUser: mocks.getUser },
     rpc: mocks.rpc,
+    from: mocks.from,
     storage: { from: () => ({ remove: mocks.remove }) },
   },
 }));
@@ -73,6 +75,48 @@ describe("versioned mission progress", () => {
     });
     expect(mocks.rpc).toHaveBeenCalledOnce();
     expect(mocks.rpc.mock.calls[0][0]).toBe("save_mission_progress");
+  });
+});
+
+describe("recovery progress reads", () => {
+  function readResult(result: unknown, rejected = false) {
+    const eq = vi.fn();
+    eq.mockReturnValueOnce({ eq });
+    if (rejected) eq.mockRejectedValueOnce(result);
+    else eq.mockResolvedValueOnce(result);
+    mocks.from.mockReturnValue({ select: () => ({ eq }) });
+    return eq;
+  }
+
+  it("returns the latest server revisions scoped to the signed-in learner and course", async () => {
+    const rows = [{ module_id: "module", mission_revision: 9 }];
+    const eq = readResult({ data: rows, error: null });
+    expect(await microLearningService.getLearnerProgress("course")).toEqual({ data: rows, error: null });
+    expect(eq.mock.calls).toEqual([["user_id", "participant"], ["course_id", "course"]]);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.remove).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes an empty confirmed server state from a failed read", async () => {
+    readResult({ data: [], error: null });
+    expect(await microLearningService.getLearnerProgress("course")).toEqual({ data: [], error: null });
+    const error = { message: "offline" };
+    readResult({ data: [], error });
+    expect(await microLearningService.getLearnerProgress("course")).toEqual({ data: null, error });
+  });
+
+  it("returns a recoverable failure when the progress request throws", async () => {
+    readResult(new Error("network unavailable"), true);
+    const result = await microLearningService.getLearnerProgress("course");
+    expect(result.data).toBeNull();
+    expect(result.error).toBeInstanceOf(Error);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("does not read progress without a confirmed identity", async () => {
+    mocks.getUser.mockRejectedValueOnce(new Error("auth unavailable"));
+    expect((await microLearningService.getLearnerProgress("course")).data).toBeNull();
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 });
 

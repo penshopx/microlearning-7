@@ -375,16 +375,21 @@ export const microLearningService = {
    * Get learner progress for a course
    */
   async getCourseProgress(courseId: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { data: null, error: new Error("Not authenticated") };
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) return { data: null, error: authError ?? new Error("Not authenticated") };
 
-    const { data, error } = await supabase
-      .from("learner_progress")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("course_id", courseId);
+      const { data, error } = await supabase
+        .from("learner_progress")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("course_id", courseId);
 
-    return { data, error };
+      return { data: error ? null : data, error };
+    } catch {
+      // Do not turn an unavailable server snapshot into empty learner progress.
+      return { data: null, error: new Error("Unable to load learner progress") };
+    }
   },
 
   /**

@@ -233,7 +233,7 @@ describe("participant evidence conflicts", () => {
     mocks.getProgress.mockRejectedValueOnce(new Error("connection lost"));
     fireEvent.change(editor, { target: { value: "Draf sebelum koneksi terputus" } });
     fireEvent.blur(editor);
-    await screen.findByText("Penyimpanan belum dapat dipastikan. Muat ulang halaman sebelum mencoba lagi.");
+    await screen.findByText(/Perubahan ini tidak disimpan, dan data terbaru belum berhasil dimuat/);
     expect(screen.getByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf sebelum koneksi terputus");
     expect(screen.getByRole("button", { name: "Pulihkan draf ke editor" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Salin draf lokal" })).toBeEnabled();
@@ -253,6 +253,73 @@ describe("participant evidence conflicts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Salin draf lokal" }));
     await screen.findByText(/Pilih teks draf lokal lalu salin secara manual/);
     expect(screen.getByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf aman saat offline");
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries only the server read, keeps the draft and blocks duplicate refreshes", async () => {
+    render(<CoursePage />);
+    const editor = await waitForAuthenticatedCourse();
+    mocks.save.mockResolvedValueOnce({ data: null, error: { code: "40001" } });
+    mocks.getProgress.mockResolvedValue({ data: null, error: new Error("offline") });
+    fireEvent.change(editor, { target: { value: "Draf aman saat mencoba lagi" } });
+    fireEvent.blur(editor);
+    const retry = await screen.findByRole("button", { name: "Coba muat data terbaru" });
+    await waitFor(() => expect(retry).toBeEnabled());
+    expect(editor).toBeDisabled();
+    expect(screen.queryByText(/Data terbaru berhasil dimuat/)).not.toBeInTheDocument();
+    const reload = deferred<{ data: ReturnType<typeof progress>[]; error: null }>();
+    mocks.getProgress.mockReturnValueOnce(reload.promise);
+    const reads = mocks.getProgress.mock.calls.length;
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    expect(retry).toBeDisabled();
+    expect(mocks.getProgress).toHaveBeenCalledTimes(reads + 1);
+    await act(async () => reload.resolve({
+      data: [progress(9, [proof("confirmed.png")], "Refleksi terbaru")], error: null,
+    }));
+    await screen.findByText(/Data terbaru berhasil dimuat/);
+    expect(editor).toHaveValue("Refleksi terbaru");
+    expect(editor).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf aman saat mencoba lagi");
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Periksa kondisi" }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+    expect(mocks.save.mock.calls[1][2].expectedMissionRevision).toBe(9);
+  });
+
+  it("keeps uncertain uploaded proof visible and locked when save and reload fail", async () => {
+    const { container } = render(<CoursePage />);
+    await waitForAuthenticatedCourse();
+    mocks.save.mockRejectedValueOnce(new Error("response lost"));
+    mocks.getProgress.mockResolvedValue({ data: null, error: new Error("offline") });
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(["proof"], "uncertain.png", { type: "image/png" })] },
+    });
+    await screen.findByText(/Penyimpanan belum dapat dipastikan dan data terbaru belum berhasil dimuat/);
+    expect(screen.getByText("uncertain.png")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Coba muat data terbaru" })).toBeEnabled());
+    expect(container.querySelector('input[type="file"]')).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Hapus/ })).not.toBeInTheDocument();
+    mocks.getProgress.mockResolvedValue({ data: [progress(5, [proof("uncertain.png")])], error: null });
+    fireEvent.click(screen.getByRole("button", { name: "Coba muat data terbaru" }));
+    await screen.findByText(/sebagian perubahan mungkin sudah tersimpan/);
+    expect(screen.getByText("uncertain.png")).toBeInTheDocument();
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps recovery available after another failed refresh", async () => {
+    render(<CoursePage />);
+    const editor = await waitForAuthenticatedCourse();
+    mocks.save.mockResolvedValueOnce({ data: null, error: new Error("lost response") });
+    mocks.getProgress.mockRejectedValue(new Error("offline"));
+    fireEvent.change(editor, { target: { value: "Draf tetap ada" } });
+    fireEvent.blur(editor);
+    const retry = await screen.findByRole("button", { name: "Coba muat data terbaru" });
+    await waitFor(() => expect(retry).toBeEnabled());
+    fireEvent.click(retry);
+    await waitFor(() => expect(retry).toBeEnabled());
+    expect(editor).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Draf refleksi lokal" })).toHaveValue("Draf tetap ada");
     expect(mocks.save).toHaveBeenCalledTimes(1);
   });
 
