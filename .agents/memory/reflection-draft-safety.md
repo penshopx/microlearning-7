@@ -11,6 +11,6 @@ Durable recovery is for reflection text only, scoped to the authenticated accoun
 
 Treat save queues and recovery locks as belonging to an account/course/module context, not to the mounted page.
 
-**Why:** Ignoring stale response data is insufficient: an unresolved old request can still block saves in the next context, and its eventual cleanup can release a newer request's lock.
+**Why:** Ignoring stale response data is insufficient: an unresolved old request can still block saves in the next context, its eventual cleanup can release a newer request's lock, and clipboard completion can display an unrelated copy notice.
 
-**How to apply:** Detach the old queue on context changes and scope asynchronous cleanup and copy feedback as well as response application. Prove the next context can save before resolving the old request.
+**How to apply:** Detach the old queue on context changes and scope asynchronous cleanup and copy feedback as well as response application. Exercise overlapping old/new recovery operations with controlled promises, including successful and failed responses. Prove the next context can save before resolving the old request, the new operation remains locked until its own response arrives, and old queued writes never start.

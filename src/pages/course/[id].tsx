@@ -145,7 +145,7 @@ export default function CoursePage() {
   const revisionRef = useRef<Record<string, number>>({});
   const saveContextRef = useRef(0);
   const saveBlockedRef = useRef(false);
-  const recoveryRequestRef = useRef(false);
+  const recoveryRequestRef = useRef<number | null>(null);
   const recoveryConflictRef = useRef(false);
   const activeModuleRef = useRef<string | undefined>(undefined);
   const localReflectionRef = useRef("");
@@ -197,7 +197,9 @@ export default function CoursePage() {
       microLearningService.getLearnerProgress(courseId),
     ]).then(([courseResult, progressResult]) => {
       if (!active) return;
-      if (courseResult.data) setCourse(courseResult.data);
+      if (courseResult.data) {
+        setCourse({ ...courseResult.data.course, modules: courseResult.data.modules });
+      }
       if (progressResult.data) {
         setProgress(progressResult.data);
         revisionRef.current = Object.fromEntries(progressResult.data.map(
@@ -278,7 +280,7 @@ export default function CoursePage() {
     // block this context's queue nor release locks owned by its newer requests.
     saveSequenceRef.current++;
     saveQueueRef.current = Promise.resolve();
-    recoveryRequestRef.current = false;
+    recoveryRequestRef.current = null;
     recoveryConflictRef.current = false;
     saveBlockedRef.current = false;
     setSaving(false);
@@ -393,8 +395,8 @@ export default function CoursePage() {
 
   // Recovery reads only: never replay a snapshot whose commit is uncertain.
   const refreshMissionProgress = async (moduleId: string, context: number) => {
-    if (recoveryRequestRef.current) return;
-    recoveryRequestRef.current = true;
+    if (recoveryRequestRef.current === context) return;
+    recoveryRequestRef.current = context;
     setRefreshingProgress(true);
     try {
       const latest = await microLearningService.getLearnerProgress(courseId);
@@ -420,8 +422,8 @@ export default function CoursePage() {
         ? "Progres berubah di tab atau perangkat lain. Perubahan ini tidak disimpan, dan data terbaru belum berhasil dimuat. Coba muat data terbaru sebelum mengedit lagi. Draf refleksi dan bukti lokal tetap dipertahankan; bukti belum dipastikan tersimpan."
         : "Penyimpanan belum dapat dipastikan dan data terbaru belum berhasil dimuat. Coba muat data terbaru sebelum mengedit lagi. Draf refleksi dan bukti lokal tetap dipertahankan; bukti belum dipastikan tersimpan.");
     } finally {
-      if (context === saveContextRef.current) {
-        recoveryRequestRef.current = false;
+      if (context === saveContextRef.current && recoveryRequestRef.current === context) {
+        recoveryRequestRef.current = null;
         setRefreshingProgress(false);
       }
     }
@@ -510,15 +512,15 @@ export default function CoursePage() {
   };
 
   const copyReflectionDraft = async () => {
-    const context = saveContextRef.current;
     if (reflectionDraft === null) return;
+    const context = saveContextRef.current;
     try {
       await navigator.clipboard.writeText(reflectionDraft);
-      if (context === saveContextRef.current) setCopyMessage("Draf refleksi disalin.");
+      if (context !== saveContextRef.current) return;
+      setCopyMessage("Draf refleksi disalin.");
     } catch {
-      if (context === saveContextRef.current) {
-        setCopyMessage("Tidak dapat menyalin otomatis. Pilih teks draf lokal lalu salin secara manual.");
-      }
+      if (context !== saveContextRef.current) return;
+      setCopyMessage("Tidak dapat menyalin otomatis. Pilih teks draf lokal lalu salin secara manual.");
     }
   };
 

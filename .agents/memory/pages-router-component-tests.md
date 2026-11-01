@@ -14,3 +14,9 @@ For course-page interaction tests, wait for the authenticated viewer's data relo
 **Why:** The initial anonymous render can be replaced immediately after the asynchronous auth lookup. An editor found during that render can become detached, making simulated input and blur events silently do nothing. Evidence uploads begun before the reload can also be invalidated by the save-context change, so waiting for the first visible upload prompt is unsafe.
 
 **How to apply:** Stabilize the auth-dependent load in the test fixture before querying interactive elements; do not treat the first visible editor as proof that initialization is finished. Test this readiness barrier with separately controlled auth and reload promises, not longer timeouts.
+
+Mock service responses at their actual public boundary, not at the shape the component happens to expect.
+
+**Why:** A flat course mock previously hid a mismatch with the service's nested course/modules envelope: component tests passed while the real browser could not display the mission.
+
+**How to apply:** Check service DTOs when maintaining fixtures. Browser isolation should intercept Supabase transport requests while leaving the real service adapters and Next assets intact.
