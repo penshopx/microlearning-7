@@ -23,6 +23,15 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 const session = (id: string) => ({ user: { id, email: `${id}@example.com` } });
+function deferredProfile() {
+  let resolve!: (value: { data: { role: string } }) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<{ data: { role: string } }>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -70,6 +79,54 @@ it("clears admin status immediately when switching accounts", async () => {
   act(() => mocks.listener?.("SIGNED_IN", session("member")));
   expect(result.current.userId).toBe("member");
   expect(result.current.isAdmin).toBe(false);
+});
+
+it.each(["old-first", "active-first"])(
+  "keeps the participant role when account profiles complete %s",
+  async order => {
+    const oldProfile = deferredProfile();
+    const activeProfile = deferredProfile();
+    mocks.getSession.mockResolvedValue({ data: { session: session("admin") } });
+    mocks.profile.mockResolvedValueOnce({ data: { role: "admin" } });
+    const { result } = renderHook(() => useAuth());
+    await waitFor(() => expect(result.current.isAdmin).toBe(true));
+
+    // Leave a refresh for the old admin in flight before changing identity.
+    mocks.profile.mockReturnValueOnce(oldProfile.promise);
+    act(() => mocks.listener?.("TOKEN_REFRESHED", session("admin")));
+    await waitFor(() => expect(mocks.profile).toHaveBeenCalledTimes(2));
+    mocks.profile.mockReturnValueOnce(activeProfile.promise);
+    act(() => mocks.listener?.("SIGNED_IN", session("member")));
+    expect(result.current.userId).toBe("member");
+    expect(result.current.isAdmin).toBe(false);
+    await waitFor(() => expect(mocks.profile).toHaveBeenLastCalledWith("member"));
+
+    const completions = order === "old-first"
+      ? [() => oldProfile.resolve({ data: { role: "admin" } }),
+         () => activeProfile.resolve({ data: { role: "user" } })]
+      : [() => activeProfile.resolve({ data: { role: "user" } }),
+         () => oldProfile.resolve({ data: { role: "admin" } })];
+    for (const complete of completions) {
+      await act(async () => complete());
+      expect(result.current.userId).toBe("member");
+      expect(result.current.userName).toBe("member");
+      expect(result.current.isAdmin).toBe(false);
+    }
+  },
+);
+
+it("does not let a failed old profile revoke the active admin role", async () => {
+  const oldProfile = deferredProfile();
+  mocks.getSession.mockResolvedValue({ data: { session: session("member") } });
+  mocks.profile.mockReturnValueOnce(oldProfile.promise);
+  const { result } = renderHook(() => useAuth());
+  await waitFor(() => expect(mocks.profile).toHaveBeenCalledWith("member"));
+  mocks.profile.mockResolvedValueOnce({ data: { role: "admin" } });
+  act(() => mocks.listener?.("SIGNED_IN", session("admin")));
+  await waitFor(() => expect(result.current.isAdmin).toBe(true));
+  await act(async () => oldProfile.reject(new Error("Profile request failed")));
+  expect(result.current.userId).toBe("admin");
+  expect(result.current.isAdmin).toBe(true);
 });
 
 it("does not restore an old startup session after a newer logout event", async () => {
