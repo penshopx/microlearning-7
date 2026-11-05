@@ -74,6 +74,15 @@ done
 "${PSQL[@]}" -c "CREATE TABLE public.profiles(id UUID PRIMARY KEY, role TEXT DEFAULT 'user'); GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261105000000_evidence_cleanup_health.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/tests/mission_cleanup_health.sql"
+node "$ROOT/scripts/test-mission-cleanup-concurrency.mjs" "$TEMP" 55439 "$(id -un)"
+"${PSQL[@]}" >/dev/null <<'SQL'
+DELETE FROM storage.objects WHERE name LIKE '%/cleanup-race-%';
+DELETE FROM public.mission_evidence_objects WHERE storage_path LIKE '%/cleanup-race-%';
+DELETE FROM public.profiles WHERE id IN (
+ '00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002');
+DROP FUNCTION public.test_cleanup_race_setup(INTEGER), public.test_cleanup_race_assert(INTEGER, BOOLEAN);
+DROP TABLE public.test_cleanup_foreign_snapshot;
+SQL
 "${PSQL[@]}" -c "CREATE ROLE service_role NOLOGIN BYPASSRLS; GRANT USAGE ON SCHEMA public TO service_role;" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261106000000_scheduled_evidence_cleanup.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/tests/mission_cleanup_worker.sql"

@@ -102,3 +102,69 @@ DO $$ BEGIN
 END $$;
 RESET ROLE;
 ROLLBACK;
+
+-- Committed fixtures for the independent connections driven by
+-- scripts/test-mission-cleanup-concurrency.mjs. Never installed outside the
+-- disposable cluster. Keep a foreign owner's full metadata as a tamper sentinel.
+CREATE TABLE public.test_cleanup_foreign_snapshot AS
+ SELECT * FROM public.mission_evidence_objects WITH NO DATA;
+
+CREATE FUNCTION public.test_cleanup_race_setup(prior_failures INTEGER)
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+  DELETE FROM storage.objects WHERE bucket_id = 'mission-evidence';
+  DELETE FROM public.mission_evidence_objects
+    WHERE storage_path LIKE '%/cleanup-race-%';
+  INSERT INTO public.profiles(id, role) VALUES
+    ('00000000-0000-4000-8000-000000000001', 'admin'),
+    ('00000000-0000-4000-8000-000000000002', 'user')
+    ON CONFLICT (id) DO UPDATE SET role = excluded.role;
+  INSERT INTO storage.objects(bucket_id, name) VALUES
+    ('mission-evidence', '00000000-0000-4000-8000-000000000002/cleanup-race-own'),
+    ('mission-evidence', '00000000-0000-4000-8000-000000000001/cleanup-race-foreign');
+  UPDATE public.mission_evidence_objects SET state = 'garbage'
+    WHERE storage_path LIKE '%/cleanup-race-%';
+  UPDATE public.mission_evidence_objects SET
+    cleanup_failure_count = prior_failures,
+    cleanup_first_failure_at = CASE WHEN prior_failures > 0 THEN now() - interval '11 minutes' END,
+    cleanup_last_failure_at = CASE WHEN prior_failures > 0 THEN now() - interval '5 minutes 1 second' END,
+    cleanup_since = now() - interval '25 hours'
+    WHERE storage_path LIKE '%/cleanup-race-own';
+  TRUNCATE public.test_cleanup_foreign_snapshot;
+  INSERT INTO public.test_cleanup_foreign_snapshot
+    SELECT * FROM public.mission_evidence_objects
+    WHERE storage_path LIKE '%/cleanup-race-foreign';
+END $$;
+
+CREATE FUNCTION public.test_cleanup_race_assert(expected_failures INTEGER, deleted BOOLEAN)
+RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE health JSONB;
+BEGIN
+  PERFORM public.test_assert((SELECT cleanup_failure_count = expected_failures
+    AND cleanup_first_failure_at IS NOT NULL AND cleanup_last_failure_at IS NOT NULL
+    AND cleanup_last_failure_at > clock_timestamp() - interval '5 minutes'
+    AND (expected_failures <> 1
+      OR cleanup_last_failure_at - cleanup_first_failure_at BETWEEN interval '0' AND interval '1 second')
+    AND (expected_failures < 3
+      OR cleanup_last_failure_at - cleanup_first_failure_at >= interval '10 minutes')
+    FROM public.mission_evidence_objects
+    WHERE storage_path LIKE '%/cleanup-race-own'),
+    'overlapping reports count only one new failure in the five-minute window');
+  PERFORM public.test_assert(NOT EXISTS (
+    SELECT 1 FROM public.test_cleanup_foreign_snapshot before
+    FULL JOIN public.mission_evidence_objects after USING (storage_path)
+    WHERE coalesce(before.storage_path, after.storage_path) LIKE '%/cleanup-race-foreign'
+      AND to_jsonb(before) IS DISTINCT FROM to_jsonb(after)),
+    'another account cannot change any foreign object metadata');
+  PERFORM public.test_assert((SELECT count(*) = CASE WHEN deleted THEN 0 ELSE 1 END
+    FROM storage.objects WHERE bucket_id = 'mission-evidence'
+      AND name LIKE '%/cleanup-race-own'), 'expected Storage deletion committed');
+  PERFORM set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000001', true);
+  health := public.get_mission_cleanup_health();
+  -- The foreign sentinel remains pending, but never overdue or repeatedly failed.
+  PERFORM public.test_assert((health->>'pendingCount')::int = CASE WHEN deleted THEN 1 ELSE 2 END
+    AND (health->>'overdueCount')::int = CASE WHEN deleted THEN 0 ELSE 1 END
+    AND (health->>'repeatedFailureCount')::int =
+      CASE WHEN NOT deleted AND expected_failures >= 3 THEN 1 ELSE 0 END,
+    'health warns only for existing objects, not deleted tombstones');
+END $$;
