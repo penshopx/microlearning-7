@@ -347,7 +347,8 @@ export const microLearningService = {
     return { data, error };
   },
 
-  /** Retry durable cleanup on every visit/mutation. Never delete an upload
+  /** Opportunistic retry supplements the scheduled service-only worker.
+   * Never delete an upload
    * solely because its save response was lost: the server checks attachment. */
   async reconcileEvidence(abandonPath?: string): Promise<boolean> {
     const { data, error } = await supabase.rpc("reconcile_mission_evidence", {

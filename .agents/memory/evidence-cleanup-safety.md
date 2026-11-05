@@ -15,5 +15,5 @@ unsafe if another device can reattach one of its paths before deletion.
 **How to apply:** Keep retirement irreversible and enforce deletion eligibility
 in Storage policy, not only UI code. Preserve queued cleanup after connection
 failures. Staged uploads get a grace period so cleanup does not race a live
-upload; retries currently run while an authenticated course page is open and
-on the participant's next visit.
+upload. Independent cleanup must run outside the web application's request
+lifecycle: idle/autoscaled web processes cannot guarantee scheduled work.

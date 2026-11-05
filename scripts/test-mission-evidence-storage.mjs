@@ -113,6 +113,7 @@ async function prepareIsolatedProject(tempRoot) {
     "20261102000000_mission_evidence_concurrency.sql",
     "20261104000000_preserve_evidence_on_partial_progress.sql",
     "20261105000000_evidence_cleanup_health.sql",
+    "20261106000000_scheduled_evidence_cleanup.sql",
   ]) {
     await copyFile(path.join(migrationDir, migration), path.join(testMigrations, migration));
   }
@@ -546,6 +547,28 @@ async function main() {
       unlinkedPath, ownerSession.data.session,
       "Storage API denies the matching owner a signed URL for an unlinked existing object",
     );
+    // Retire the unlinked object, then simulate a scheduler with no participant
+    // session. Delete physical bytes only through the actual Storage API.
+    requireNoError(await participant.rpc("reconcile_mission_evidence", {
+      p_abandon_path: unlinkedPath,
+    }), "Retire the unattached object");
+    const leaseId = randomUUID();
+    const claimed = requireNoError(await service.rpc("claim_mission_cleanup_batch", {
+      p_lease_id: leaseId,
+    }), "Service worker claims durable cleanup");
+    const paths = claimed.map(row => row.storage_path);
+    assert(paths.includes(unlinkedPath), "Worker did not claim retired evidence");
+    assert(!paths.includes(storagePath), "Worker claimed attached evidence");
+    requireNoError(await service.storage.from(bucket).remove(paths), "Worker removes physical evidence");
+    const result = requireNoError(await service.rpc("finish_mission_cleanup_batch", {
+      p_lease_id: leaseId, p_paths: paths,
+    }), "Worker confirms Storage result");
+    assert(result.remaining === 0 && result.deleted === paths.length, "Worker did not confirm cleanup");
+    requireNoError(await participant.storage.from(bucket).download(storagePath),
+      "Attached physical evidence survives scheduled cleanup");
+    const missing = await service.storage.from(bucket).download(unlinkedPath);
+    assert(missing.error && !missing.data, "Retired bytes still readable after worker deletion");
+    console.log("PASS: Trusted worker removes retired physical files and preserves attached evidence");
   } catch (error) {
     testError = error;
     if (String(error.message).includes("HealthCheckTimeoutError")) {

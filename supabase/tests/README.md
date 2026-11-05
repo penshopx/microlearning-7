@@ -110,10 +110,12 @@ from expiry, even before their owner revisits.
 
 The card refreshes every minute and on demand, with no repeated toast/email.
 Deleted Storage objects stop contributing immediately on the next refresh,
-despite retained safety tombstones. Cleanup still runs only through participant
-visits/mutations; this change does not add an automatic cleanup worker. If
-warnings persist, check Storage availability and delete policies without copying
-private paths or evidence into logs/tickets.
+despite retained safety tombstones. Participant visits remain an opportunistic
+retry; the service-only scheduled worker runs independently once activated.
+See `../functions/mission-evidence-cleanup/README.md` for the migration, Edge
+Function and Vault/cron activation steps. Worker failure counters are separate
+from advisory browser reports. If warnings persist, check Storage availability
+and scheduling without copying private paths or evidence into logs/tickets.
 
 `npm run test:integration:evidence` includes actual SQL authorization, role
 escalation prevention, retry deduplication, delay thresholds, and recovery tests

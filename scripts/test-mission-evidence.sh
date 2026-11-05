@@ -74,3 +74,46 @@ done
 "${PSQL[@]}" -c "CREATE TABLE public.profiles(id UUID PRIMARY KEY, role TEXT DEFAULT 'user'); GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20261105000000_evidence_cleanup_health.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/tests/mission_cleanup_health.sql"
+"${PSQL[@]}" -c "CREATE ROLE service_role NOLOGIN BYPASSRLS; GRANT USAGE ON SCHEMA public TO service_role;" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20261106000000_scheduled_evidence_cleanup.sql" >/dev/null
+"${PSQL[@]}" -f "$ROOT/supabase/tests/mission_cleanup_worker.sql"
+
+# Separate committed connections model a process disappearing after claim.
+"${PSQL[@]}" >/dev/null <<'SQL'
+DELETE FROM storage.objects WHERE bucket_id = 'mission-evidence';
+INSERT INTO storage.objects(bucket_id, name) VALUES
+ ('mission-evidence', '00000000-0000-4000-8000-000000000002/restart-worker');
+UPDATE public.mission_evidence_objects SET expires_at = now() - interval '1 hour'
+ WHERE storage_path LIKE '%/restart-worker';
+CREATE TABLE public.test_cleanup_restart(path TEXT);
+GRANT ALL ON public.test_cleanup_restart TO service_role;
+SET ROLE service_role;
+INSERT INTO public.test_cleanup_restart SELECT storage_path
+ FROM public.claim_mission_cleanup_batch('00000000-0000-4000-8000-000000000020');
+SQL
+"${PSQL[@]}" >/dev/null <<'SQL'
+SELECT public.test_assert((SELECT count(*) = 1 FROM public.test_cleanup_restart),
+ 'claim survives connection/process exit');
+SET ROLE service_role;
+SELECT public.test_assert((SELECT count(*) = 0 FROM public.claim_mission_cleanup_batch(
+ '00000000-0000-4000-8000-000000000021')), 'persisted lease blocks early restart');
+RESET ROLE;
+UPDATE public.mission_cleanup_worker SET lease_until = now() - interval '1 second';
+UPDATE public.mission_evidence_objects SET cleanup_next_attempt_at = now() - interval '1 second'
+ WHERE storage_path IN (SELECT path FROM public.test_cleanup_restart);
+SET ROLE service_role;
+SELECT public.test_assert((SELECT count(*) = 1 FROM public.claim_mission_cleanup_batch(
+ '00000000-0000-4000-8000-000000000022')), 'new process reclaims after expiry');
+SQL
+"${PSQL[@]}" >/dev/null <<'SQL'
+-- Model successful provider deletion followed by loss of its HTTP response.
+DELETE FROM storage.objects WHERE name IN (SELECT path FROM public.test_cleanup_restart);
+SET ROLE service_role;
+SELECT public.test_assert((public.finish_mission_cleanup_batch(
+ '00000000-0000-4000-8000-000000000022',
+ ARRAY(SELECT path FROM public.test_cleanup_restart))->>'deleted')::int = 1,
+ 'new connection confirms durable Storage recovery');
+RESET ROLE;
+DROP TABLE public.test_cleanup_restart;
+SQL
+echo "PASS: cleanup lease and recovery survive separate worker connections"
