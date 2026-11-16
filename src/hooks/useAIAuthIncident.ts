@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import {
   AI_AUTH_INCIDENT_UPDATED_EVENT,
@@ -11,8 +12,17 @@ interface AIAuthStatus {
   hasKey?: boolean;
 }
 
-/** Poll shared admin-only incident metadata, never the provider health probe. */
-export function useAIAuthStatus(userId: string | null, isAdmin: boolean): AIAuthStatus | null {
+interface AdminAIState {
+  userId: string | null;
+  isAdmin: boolean;
+  status: AIAuthStatus | null;
+}
+
+const AdminAIContext = createContext<AdminAIState | undefined>(undefined);
+
+/** Own the single admin-only metadata poll for the active app session. */
+export function AIAuthStatusProvider({ children }: { children: ReactNode }) {
+  const { userId, isAdmin } = useAuth();
   const [snapshot, setSnapshot] = useState<{
     userId: string;
     value: AIAuthStatus;
@@ -40,7 +50,7 @@ export function useAIAuthStatus(userId: string | null, isAdmin: boolean): AIAuth
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (cancelled) return;
-        if (!session?.access_token) {
+        if (!session?.access_token || session.user.id !== userId) {
           if (!cancelled) setSnapshot(null);
           return;
         }
@@ -89,9 +99,20 @@ export function useAIAuthStatus(userId: string | null, isAdmin: boolean): AIAuth
     };
   }, [userId, isAdmin]);
 
-  return isAdmin && snapshot?.userId === userId ? snapshot.value : null;
+  const status = isAdmin && snapshot?.userId === userId ? snapshot.value : null;
+  return createElement(AdminAIContext.Provider, { value: { userId, isAdmin, status } }, children);
 }
 
-export function useAIAuthIncident(userId: string | null, isAdmin: boolean) {
-  return useAIAuthStatus(userId, isAdmin)?.incident ?? null;
+export function useAdminAIState(): AdminAIState {
+  const state = useContext(AdminAIContext);
+  if (!state) throw new Error("Admin AI state requires AIAuthStatusProvider");
+  return state;
+}
+
+export function useAIAuthStatus(): AIAuthStatus | null {
+  return useAdminAIState().status;
+}
+
+export function useAIAuthIncident() {
+  return useAIAuthStatus()?.incident ?? null;
 }

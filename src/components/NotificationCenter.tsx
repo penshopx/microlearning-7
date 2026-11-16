@@ -17,8 +17,7 @@ import {
   Layers,
   AlertTriangle,
 } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
-import { useAIAuthIncident } from "@/hooks/useAIAuthIncident";
+import { useAdminAIState } from "@/hooks/useAIAuthIncident";
 
 interface Notification {
   id: string;
@@ -170,8 +169,8 @@ function generateNotifications(userId: string | null): Notification[] {
 }
 
 export function NotificationCenter() {
-  const { userId, isAdmin } = useAuth();
-  const incident = useAIAuthIncident(userId, isAdmin);
+  const { userId, status } = useAdminAIState();
+  const incident = status?.incident ?? null;
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);

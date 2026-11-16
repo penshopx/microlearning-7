@@ -3,12 +3,18 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminAIWarning } from "@/components/AdminAIWarning";
+import { AIAuthStatusProvider } from "@/hooks/useAIAuthIncident";
+import type { ReactNode } from "react";
+
+function wrapper({ children }: { children: ReactNode }) {
+  return <AIAuthStatusProvider>{children}</AIAuthStatusProvider>;
+}
 
 const auth = vi.hoisted(() => ({ userId: "admin", isAdmin: true }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => auth }));
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: { auth: { getSession: async () => ({
-    data: { session: { access_token: "test-token" } },
+    data: { session: { access_token: "test-token", user: { id: auth.userId } } },
   }) } },
 }));
 
@@ -34,7 +40,7 @@ function healthy(incident: object | null = null, hasKey = true) {
 
 describe("admin incident storage warning", () => {
   it("warns on an initial server failure and clears after automatic polling recovery", async () => {
-    render(<AdminAIWarning />);
+    render(<AdminAIWarning />, { wrapper });
     await settle();
     expect(screen.getByRole("alert")).toHaveTextContent("Status insiden AI tidak tersedia");
     expect(screen.getByRole("alert")).toHaveTextContent("Belum dapat dipastikan");
@@ -47,7 +53,7 @@ describe("admin incident storage warning", () => {
 
   it("warns on network failure and recovers on focus", async () => {
     vi.mocked(fetch).mockRejectedValue(new Error("private provider response"));
-    render(<AdminAIWarning />);
+    render(<AdminAIWarning />, { wrapper });
     await settle();
     expect(screen.getByRole("alert")).not.toHaveTextContent("private");
     vi.mocked(fetch).mockResolvedValue(healthy());
@@ -56,7 +62,7 @@ describe("admin incident storage warning", () => {
   });
 
   it.each([401, 403])("clears the warning when the server denies access (%i)", async status => {
-    render(<AdminAIWarning />);
+    render(<AdminAIWarning />, { wrapper });
     await settle();
     vi.mocked(fetch).mockResolvedValue({ ok: false, status } as Response);
     await act(async () => { window.dispatchEvent(new Event("focus")); });
@@ -65,7 +71,7 @@ describe("admin incident storage warning", () => {
 
   it("does not request or display operational status for non-admins", async () => {
     auth.isAdmin = false;
-    render(<AdminAIWarning />);
+    render(<AdminAIWarning />, { wrapper });
     await settle();
     expect(fetch).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -74,7 +80,7 @@ describe("admin incident storage warning", () => {
   it("clears on account changes and ignores late results from the old account", async () => {
     let finish!: (response: Response) => void;
     vi.mocked(fetch).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-    const { rerender } = render(<AdminAIWarning />);
+    const { rerender } = render(<AdminAIWarning />, { wrapper });
     await settle();
     auth.userId = "learner";
     auth.isAdmin = false;
@@ -84,7 +90,7 @@ describe("admin incident storage warning", () => {
   });
 
   it("preserves the missing-key warning after storage recovers", async () => {
-    render(<AdminAIWarning />);
+    render(<AdminAIWarning />, { wrapper });
     await settle();
     vi.mocked(fetch).mockResolvedValue(healthy(null, false));
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });

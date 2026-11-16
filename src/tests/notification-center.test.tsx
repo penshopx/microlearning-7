@@ -9,11 +9,12 @@ const state = vi.hoisted(() => ({
   incident: null as AIAuthIncident | null,
   isAdmin: true,
 }));
-vi.mock("@/hooks/useAuth", () => ({
-  useAuth: () => ({ userId: "test-user", isAdmin: state.isAdmin }),
-}));
 vi.mock("@/hooks/useAIAuthIncident", () => ({
-  useAIAuthIncident: (_id: string, isAdmin: boolean) => isAdmin ? state.incident : null,
+  useAdminAIState: () => ({
+    userId: "test-user",
+    isAdmin: state.isAdmin,
+    status: state.isAdmin ? { incident: state.incident, status: "available" } : null,
+  }),
 }));
 afterEach(() => {
   cleanup();

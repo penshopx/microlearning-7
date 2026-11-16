@@ -1,11 +1,9 @@
 import { useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
-import { useAIAuthStatus } from "@/hooks/useAIAuthIncident";
+import { useAdminAIState } from "@/hooks/useAIAuthIncident";
 import { AlertTriangle, X, ExternalLink } from "lucide-react";
 
 export function AdminAIWarning() {
-  const { userId, isAdmin } = useAuth();
-  const status = useAIAuthStatus(userId, isAdmin);
+  const { userId, isAdmin, status } = useAdminAIState();
   const [dismissedFor, setDismissedFor] = useState<string | null>(null);
   const unavailable = status?.status === "unavailable";
   const missingKey = status?.status === "available" && status.hasKey === false;

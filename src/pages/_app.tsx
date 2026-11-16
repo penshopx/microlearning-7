@@ -10,6 +10,7 @@ import { OnboardingWizard } from "@/components/OnboardingWizard";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AdminAIWarning } from "@/components/AdminAIWarning";
 import { AIUnavailableBanner } from "@/components/AIUnavailableBanner";
+import { AIAuthStatusProvider } from "@/hooks/useAIAuthIncident";
 
 function RouteLoadingBar() {
   const router = useRouter();
@@ -75,6 +76,7 @@ export default function App({ Component, pageProps }: AppProps) {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+      <AIAuthStatusProvider>
       <Head>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
       </Head>
@@ -86,6 +88,7 @@ export default function App({ Component, pageProps }: AppProps) {
       <CommandPalette />
       <AdminAIWarning />
       <AIUnavailableBanner />
+      </AIAuthStatusProvider>
     </ThemeProvider>
   );
 }

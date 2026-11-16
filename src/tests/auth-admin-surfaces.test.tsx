@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AdminAIWarning } from "@/components/AdminAIWarning";
 import { NotificationCenter } from "@/components/NotificationCenter";
+import { AIAuthStatusProvider } from "@/hooks/useAIAuthIncident";
+import { AI_AUTH_INCIDENT_UPDATED_EVENT } from "@/lib/ai-auth-incident";
 
 const mocks = vi.hoisted(() => ({
   listeners: new Set<(event: string, session: unknown) => void>(),
@@ -56,7 +58,7 @@ afterEach(() => {
 });
 
 it("removes both admin surfaces during a participant's delayed profile and ignores old admin results", async () => {
-  render(<><AdminAIWarning /><NotificationCenter /></>);
+  render(<AIAuthStatusProvider><AdminAIWarning /><NotificationCenter /></AIAuthStatusProvider>);
   await waitFor(() => {
     expect(screen.getByText("Kunci AI belum dikonfigurasi")).toBeVisible();
     expect(screen.getByText("Gangguan AI")).toBeVisible();
@@ -71,7 +73,7 @@ it("removes both admin surfaces during a participant's delayed profile and ignor
   const memberProfile = new Promise(resolve => { finishMemberProfile = resolve; });
   mocks.profile.mockImplementation((id: string) => id === "admin" ? oldProfile : memberProfile);
   act(() => emit("TOKEN_REFRESHED", "admin"));
-  await waitFor(() => expect(mocks.profile).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(mocks.profile).toHaveBeenCalledTimes(2));
   act(() => emit("SIGNED_IN", "member"));
 
   const expectNoAdminUI = () => {
@@ -81,10 +83,43 @@ it("removes both admin surfaces during a participant's delayed profile and ignor
     expect(document.querySelector('a[href="/admin"]')).toBeNull();
   };
   expectNoAdminUI();
-  await waitFor(() => expect(mocks.profile).toHaveBeenCalledTimes(6));
+  await waitFor(() => expect(mocks.profile).toHaveBeenCalledTimes(3));
   await act(async () => finishMemberProfile({ data: { role: "user" } }));
   await act(async () => finishOldProfile({ data: { role: "admin" } }));
   expectNoAdminUI();
   act(() => window.dispatchEvent(new Event("focus")));
   expect(fetch).toHaveBeenCalledTimes(initialFetches);
+});
+
+it("shares failures and recovery between both surfaces without refetching on navigation", async () => {
+  const surfaces = (showNotifications: boolean) => (
+    <AIAuthStatusProvider>
+      <AdminAIWarning />
+      {showNotifications && <NotificationCenter />}
+    </AIAuthStatusProvider>
+  );
+  const { rerender } = render(surfaces(true));
+  await waitFor(() => expect(screen.getByText("Gangguan AI")).toBeVisible());
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(mocks.listeners.size).toBe(1);
+
+  vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(screen.getByText("Status insiden AI tidak tersedia")).toBeVisible();
+  expect(screen.getByText("Gangguan AI")).toBeVisible();
+
+  rerender(surfaces(false));
+  rerender(surfaces(true));
+  expect(screen.getByText("Gangguan AI")).toBeVisible();
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(mocks.listeners.size).toBe(1);
+
+  vi.mocked(fetch).mockResolvedValueOnce({
+    ok: true, status: 200, json: async () => ({ hasKey: true, authFailureIncident: null }),
+  } as Response);
+  await act(async () => { window.dispatchEvent(new Event(AI_AUTH_INCIDENT_UPDATED_EVENT)); });
+  expect(screen.queryByText("Status insiden AI tidak tersedia")).not.toBeInTheDocument();
+  expect(screen.queryByText("Kunci AI belum dikonfigurasi")).not.toBeInTheDocument();
+  expect(screen.queryByText("Gangguan AI")).not.toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledTimes(3);
 });
